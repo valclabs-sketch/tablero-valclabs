@@ -247,6 +247,7 @@
         </select></div>
       ${F.day === "fecha" ? `<div class="f"><label>Fecha</label><input class="input" type="date" data-filter="date" value="${esc(F.date)}" /></div>` : ""}
       ${activeCount || F.q ? '<button class="link-btn" data-act="clear-filters">Limpiar filtros</button>' : ""}
+      ${isNotes ? "" : '<button class="btn btn-accent new-task-btn" data-act="new-task">+ Nueva tarea</button>'}
       ${chips.length && !S.filtersOpen ? `<div class="chips-active">${chips.map(c => `<span class="chip">${esc(c)}</span>`).join("")}</div>` : ""}
     </div>`;
   }
@@ -280,6 +281,7 @@
         <div class="col-head"><span class="col-dot" style="background:${s.color}"></span><span class="col-title">${s.label}</span><span class="col-count">${list.length}</span>
           <button class="col-add" data-act="new-task" data-status="${s.id}" title="Agregar tarea">+</button></div>
         <div class="col-list" data-status="${s.id}">${list.map(cardHTML).join("") || ""}</div>
+        <button class="col-add-bottom" data-act="new-task" data-status="${s.id}">+ Agregar tarea</button>
       </section>`;
     }).join("")}</div>`;
 
