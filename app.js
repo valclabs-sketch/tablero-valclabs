@@ -483,8 +483,7 @@
       <div class="field"><label>Correo</label><input class="input" name="email" type="email" required autocomplete="email" /></div>
       <div class="field"><label>Contraseña</label><input class="input" name="password" type="password" autocomplete="current-password" /></div>
       <button class="btn btn-primary" name="mode" value="in">Entrar</button>
-      <button class="btn btn-ghost" name="mode" value="link" formnovalidate>Enviarme un enlace de acceso</button>
-      <button class="btn btn-ghost" name="mode" value="up">Crear cuenta</button>
+      <button class="btn btn-ghost" name="mode" value="up">Soy nuevo/a: crear cuenta</button>
       <p class="auth-msg ${isErr ? "err" : ""}">${esc(msg || "")}</p>
     </form></div>`;
   }
