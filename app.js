@@ -1026,7 +1026,7 @@
       }
     } catch (x) {
       if (kind === "login") return renderLogin(x.message === "Invalid login credentials" ? "Correo o contraseña incorrectos" : x.message, true);
-      if (kind === "forgot") return renderForgot(/rate limit/i.test(x.message) ? "Se enviaron demasiados correos. Espera unos minutos e inténtalo de nuevo." : x.message, true);
+      if (kind === "forgot") return renderForgot(/rate limit/i.test(x.message) ? "Se enviaron demasiados correos. Espera unos minutos e inténtalo de nuevo." : /sending/i.test(x.message) ? "No se pudo enviar el correo. Avísale a la administradora del tablero." : x.message, true);
       if (kind === "new-password") return renderNewPassword(/different from the old/i.test(x.message) ? "Usa una contraseña distinta a la anterior" : x.message, true);
       if (kind === "change-password") return toast(/different from the old/i.test(x.message) ? "Usa una contraseña distinta a la anterior" : "Error: " + x.message);
       err(x);
