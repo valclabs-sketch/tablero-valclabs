@@ -462,7 +462,7 @@
       </div>
       <div class="modal-actions">
         ${task ? '<button type="button" class="btn btn-danger" data-act="delete-task">Eliminar</button>' : ""}
-        ${task && (t.due_date || t.reminder_at) ? '<button type="button" class="btn btn-ghost" data-act="ics">📆 Agregar a mi calendario</button>' : ""}
+        ${task && (t.due_date || t.reminder_at) ? '<button type="button" class="btn btn-ghost" data-act="gcal" title="Android, Google Calendar y computador">📅 Google Calendar</button><button type="button" class="btn btn-ghost" data-act="ics" title="iPhone, Mac y Outlook">🍎 Calendario Apple / Outlook</button>' : ""}
         <span class="right"><button type="button" class="btn btn-ghost" data-act="close-modal">Cancelar</button><button class="btn btn-primary">Guardar</button></span>
       </div>
     </form>`);
@@ -583,6 +583,18 @@
     closeModal();
     await reload("tasks");
     toast(n ? `${n} tarea(s) creada(s) en «Por hacer»` : "Esas tareas ya existían");
+  }
+
+  function openGoogleCalendar(t) {
+    const pad = n => String(n).padStart(2, "0");
+    const stamp = d => d.getUTCFullYear() + pad(d.getUTCMonth() + 1) + pad(d.getUTCDate()) + "T" + pad(d.getUTCHours()) + pad(d.getUTCMinutes()) + "00Z";
+    let dates;
+    if (t.reminder_at) { const st = new Date(t.reminder_at); dates = stamp(st) + "/" + stamp(new Date(st.getTime() + 30 * 60000)); }
+    else { const [y, m, d] = t.due_date.split("-").map(Number); dates = t.due_date.replace(/-/g, "") + "/" + dayStr(new Date(y, m - 1, d + 1)).replace(/-/g, ""); }
+    const p = project(t.project_id);
+    const details = [t.description, p ? "Proyecto: " + p.name : "", "Tablero: " + location.href.split("#")[0]].filter(Boolean).join("\n");
+    const url = "https://calendar.google.com/calendar/render?action=TEMPLATE&text=" + encodeURIComponent(t.title) + "&dates=" + dates + "&details=" + encodeURIComponent(details);
+    window.open(url, "_blank");
   }
 
   function downloadICS(t) {
@@ -725,6 +737,7 @@
         try { const tk = byId(S.tasks, id); await store.remove("tasks", id); removedFiles = (tk && tk.attachments) || []; await purgeRemoved(); closeModal(); toast("Tarea eliminada"); reload("tasks"); } catch (x) { err(x); }
         break;
       }
+      case "gcal": openGoogleCalendar(byId(S.tasks, el.closest("form").dataset.id)); break;
       case "ics": downloadICS(byId(S.tasks, el.closest("form").dataset.id)); break;
       case "delete-note": {
         if (!confirm("¿Eliminar esta nota?")) return;
