@@ -29,7 +29,7 @@
       mode: "local",
       async init() { load(); },
       async getUser() { return { email: "" }; },
-      async signIn() {}, async signUp() {}, async magicLink() {}, async signOut() {},
+      async signIn() {}, async signUp() {}, async magicLink() {}, async signOut() {}, async resetPassword() {}, async updatePassword() {},
       async all(t) { return db[t].map(r => ({ ...r })); },
       async insert(t, row) {
         const r = { id: uid(), created_at: nowIso(), ...row };
@@ -87,6 +87,8 @@
       async signUp(email, password) { return check(await sb.auth.signUp({ email, password, options: { emailRedirectTo: location.href.split("#")[0] } })); },
       async magicLink(email) { check(await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: location.href.split("#")[0] } })); },
       async signOut() { await sb.auth.signOut(); },
+      async resetPassword(email) { check(await sb.auth.resetPasswordForEmail(email, { redirectTo: location.href.split("#")[0].split("?")[0] })); },
+      async updatePassword(password) { check(await sb.auth.updateUser({ password })); },
       onAuth(cb) { sb.auth.onAuthStateChange((ev) => cb(ev)); },
       async all(t) {
         let q = sb.from(t).select("*");

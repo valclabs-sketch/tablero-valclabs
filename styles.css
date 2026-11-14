@@ -285,3 +285,4 @@ textarea.input { resize: vertical; min-height: 90px; line-height: 1.5; }
 .acc-item:hover { background: var(--lav-bg); }
 .acc-item.danger { color: var(--danger); border-top: 1px solid var(--border); margin-top: 4px; }
 .help-list { margin: 0; padding-left: 20px; display: grid; gap: 10px; font-size: 14px; line-height: 1.5; }
+.auth-card .forgot { display: block; margin: 10px auto 0; align-self: center; }

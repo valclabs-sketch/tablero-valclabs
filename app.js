@@ -22,6 +22,7 @@
     filters: Object.assign({ member: "", project: "", priority: "", day: "", date: "", q: "" }, lsGetJSON("filters") || {}),
     filtersOpen: false, notifOpen: false, menuOpen: false
   };
+  let recoveryMode = /type=recovery/.test(location.hash); // llegó desde el correo de «olvidé mi contraseña»
   let modalFiles = [], removedFiles = []; // adjuntos del formulario abierto
   let seenNotifs = null; // ids ya vistos (para avisar solo de los nuevos)
 
@@ -204,6 +205,7 @@
     Object.assign(S, { members, projects, tasks, notes, notifications });
   }
   async function reload(table) {
+    if (recoveryMode) return; // no tapar la pantalla de nueva contraseña
     try {
       if (table) S[table] = await store.all(table); else await loadAll();
       if (!S.me || !member(S.me)) return render();
@@ -520,6 +522,7 @@
           ${!isStandalone() ? '<button class="acc-item" data-act="install">📲 Instalar app</button>' : ""}
           <button class="acc-item" data-act="test-notif">🔔 Probar notificaciones</button>
           <button class="acc-item" data-act="view" data-v="team">⚙️ Equipo y proyectos</button>
+          ${store.mode === "cloud" ? '<button class="acc-item" data-act="change-password">🔑 Cambiar contraseña</button>' : ""}
           ${store.mode === "cloud" ? '<button class="acc-item danger" data-act="logout">↩︎ Cerrar sesión</button>' : ""}
         </div>`;
       return;
@@ -545,8 +548,40 @@
       <div class="field"><label>Contraseña</label><input class="input" name="password" type="password" autocomplete="current-password" /></div>
       <button class="btn btn-primary" name="mode" value="in">Entrar</button>
       <button class="btn btn-ghost" name="mode" value="up">Soy nuevo/a: crear cuenta</button>
+      <button type="button" class="link-btn forgot" data-act="forgot">¿Olvidaste tu contraseña?</button>
       <p class="auth-msg ${isErr ? "err" : ""}">${esc(msg || "")}</p>
     </form></div>`;
+  }
+  function renderForgot(msg, isErr) {
+    $app.innerHTML = `<div class="auth"><form class="auth-card" data-form="forgot">
+      <img class="logo" src="assets/logo.png" alt="ValClabs" />
+      <h1>Recuperar contraseña</h1>
+      <p class="auth-msg" style="margin:-8px 0 14px">Escribe tu correo y te enviaremos un enlace para crear una contraseña nueva.</p>
+      <div class="field"><label>Correo</label><input class="input" name="email" type="email" required autocomplete="email" /></div>
+      <button class="btn btn-primary">Enviarme el enlace</button>
+      <button type="button" class="btn btn-ghost" data-act="back-login">Volver</button>
+      <p class="auth-msg ${isErr ? "err" : ""}">${esc(msg || "")}</p>
+    </form></div>`;
+  }
+  function renderNewPassword(msg, isErr) {
+    $app.innerHTML = `<div class="auth"><form class="auth-card" data-form="new-password">
+      <img class="logo" src="assets/logo.png" alt="ValClabs" />
+      <h1>Crea tu nueva contraseña</h1>
+      <div class="field"><label>Nueva contraseña</label><input class="input" name="pw" type="password" minlength="6" required autocomplete="new-password" /></div>
+      <div class="field"><label>Repítela</label><input class="input" name="pw2" type="password" minlength="6" required autocomplete="new-password" /></div>
+      <button class="btn btn-primary">Guardar y entrar</button>
+      <p class="auth-msg ${isErr ? "err" : ""}">${esc(msg || "")}</p>
+    </form></div>`;
+  }
+  function passwordModal() {
+    openModal(`<form data-form="change-password">
+      <h2>🔑 Cambiar contraseña<button type="button" class="close" data-act="close-modal">×</button></h2>
+      <div class="form-grid">
+        <div class="field full"><label>Nueva contraseña</label><input class="input" name="pw" type="password" minlength="6" required autocomplete="new-password" /></div>
+        <div class="field full"><label>Repítela</label><input class="input" name="pw2" type="password" minlength="6" required autocomplete="new-password" /></div>
+      </div>
+      <div class="modal-actions"><span class="right"><button type="button" class="btn btn-ghost" data-act="close-modal">Cancelar</button><button class="btn btn-primary">Guardar</button></span></div>
+    </form>`);
   }
   function renderWho() {
     const email = (S.user && S.user.email) || "";
@@ -878,6 +913,9 @@
       case "notif": S.menuOpen = false; S.notifOpen = !S.notifOpen; renderNotifPanel(); break;
       case "menu": S.notifOpen = false; S.menuOpen = !S.menuOpen; renderNotifPanel(); break;
       case "invite": S.menuOpen = false; renderNotifPanel(); shareInvite(); break;
+      case "change-password": S.menuOpen = false; renderNotifPanel(); passwordModal(); break;
+      case "forgot": renderForgot(); break;
+      case "back-login": renderLogin(); break;
       case "close-notif": S.notifOpen = false; S.menuOpen = false; renderNotifPanel(); break;
       case "read-all": {
         const mine = S.notifications.filter(n => n.member_id === S.me && !n.read);
@@ -959,6 +997,23 @@
         const r = await store.insert("members", { name: fd.get("name").trim(), email: (S.user && S.user.email) || null, color: PALETTE[S.members.length % PALETTE.length] });
         await reload("members"); return setMe(r.id);
       }
+      if (kind === "forgot") {
+        const email = fd.get("email").trim();
+        await store.resetPassword(email);
+        return renderForgot("Listo. Si " + email + " tiene cuenta, te llegará un correo en unos minutos (revisa también Spam). Ábrelo en este mismo dispositivo.");
+      }
+      if (kind === "new-password" || kind === "change-password") {
+        const pw = fd.get("pw"), pw2 = fd.get("pw2");
+        const fail = m => kind === "new-password" ? renderNewPassword(m, true) : toast(m);
+        if (pw.length < 6) return fail("Debe tener al menos 6 caracteres");
+        if (pw !== pw2) return fail("Las contraseñas no coinciden");
+        await store.updatePassword(pw);
+        if (kind === "change-password") { closeModal(); return toast("Contraseña actualizada 🔑"); }
+        recoveryMode = false;
+        history.replaceState(null, "", location.pathname);
+        toast("Contraseña actualizada 🔑");
+        return afterLogin();
+      }
       if (kind === "login") {
         const mode = (e.submitter && e.submitter.value) || "in";
         const email = fd.get("email").trim(), pw = fd.get("password");
@@ -971,6 +1026,9 @@
       }
     } catch (x) {
       if (kind === "login") return renderLogin(x.message === "Invalid login credentials" ? "Correo o contraseña incorrectos" : x.message, true);
+      if (kind === "forgot") return renderForgot(/rate limit/i.test(x.message) ? "Se enviaron demasiados correos. Espera unos minutos e inténtalo de nuevo." : x.message, true);
+      if (kind === "new-password") return renderNewPassword(/different from the old/i.test(x.message) ? "Usa una contraseña distinta a la anterior" : x.message, true);
+      if (kind === "change-password") return toast(/different from the old/i.test(x.message) ? "Usa una contraseña distinta a la anterior" : "Error: " + x.message);
       err(x);
     }
   });
@@ -992,8 +1050,12 @@
     try {
       await store.init();
       if (store.mode === "cloud") {
-        store.onAuth(ev => { if (ev === "SIGNED_IN" && !S.user) afterLogin(); });
-        await afterLogin();
+        store.onAuth(ev => {
+          if (ev === "PASSWORD_RECOVERY") { recoveryMode = true; return renderNewPassword(); }
+          if (ev === "SIGNED_IN" && !S.user && !recoveryMode) afterLogin();
+        });
+        if (recoveryMode) { await store.getUser(); renderNewPassword(); }
+        else await afterLogin();
       } else {
         S.user = { email: "" };
         await loadAll();
