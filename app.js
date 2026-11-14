@@ -22,6 +22,7 @@
     filters: Object.assign({ member: "", project: "", priority: "", day: "", date: "", q: "" }, lsGetJSON("filters") || {}),
     filtersOpen: false, notifOpen: false
   };
+  let modalFiles = [], removedFiles = []; // adjuntos del formulario abierto
   let seenNotifs = null; // ids ya vistos (para avisar solo de los nuevos)
 
   // ---------------- utilidades ----------------
@@ -66,6 +67,46 @@
     bell: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>',
     filter: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 5h18M6 12h12M10 19h4"/></svg>'
   };
+
+  function fmtSize(b) { return b < 1024 ? b + " B" : b < 1048576 ? (b / 1024).toFixed(0) + " KB" : (b / 1048576).toFixed(1) + " MB"; }
+  function fileIcon(t) { t = t || ""; return t.startsWith("image/") ? "🖼️" : t.includes("pdf") ? "📄" : t.startsWith("video/") ? "🎬" : t.startsWith("audio/") ? "🎵" : /sheet|excel|csv/.test(t) ? "📊" : /word|document/.test(t) ? "📝" : "📎"; }
+  function attachmentsField() {
+    return `<div class="field full"><label>Archivos</label>
+      <div class="att-list" id="att-list"></div>
+      <label class="att-drop"><input type="file" multiple data-upload hidden />📎 Subir archivos <span>(fotos, PDF, documentos…)</span></label></div>`;
+  }
+  function renderAttList() {
+    const el = document.getElementById("att-list");
+    if (!el) return;
+    el.innerHTML = modalFiles.map((f, i) => `<div class="att ${f.uploading ? "loading" : ""}">
+      <span class="att-ic">${fileIcon(f.type)}</span>
+      <button type="button" class="att-name" data-act="att-open" data-i="${i}" ${f.uploading ? "disabled" : ""}>${esc(f.name)}</button>
+      <span class="att-size">${f.uploading ? "Subiendo…" : fmtSize(f.size || 0)}</span>
+      ${f.uploading ? "" : `<button type="button" class="att-x" data-act="att-remove" data-i="${i}" title="Quitar">×</button>`}
+    </div>`).join("");
+  }
+  async function handleUpload(input) {
+    const files = [...input.files]; input.value = "";
+    for (const file of files) {
+      const temp = { name: file.name, size: file.size, type: file.type, uploading: true };
+      modalFiles.push(temp); renderAttList();
+      try { Object.assign(temp, await store.uploadFile(file)); delete temp.uploading; }
+      catch (e) { modalFiles = modalFiles.filter(x => x !== temp); err(e); }
+      renderAttList();
+    }
+  }
+  async function openAttachment(att) {
+    const w = window.open("", "_blank");
+    try {
+      const url = await store.fileUrl(att);
+      if (url.startsWith("data:")) { // modo local: descargar
+        if (w) w.close();
+        const a = document.createElement("a"); a.href = url; a.download = att.name; a.click();
+      } else if (w) w.location = url; else location.href = url;
+    } catch (e) { if (w) w.close(); err(e); }
+  }
+  const cleanFiles = () => modalFiles.filter(f => !f.uploading).map(({ uploading, ...f }) => f);
+  async function purgeRemoved() { for (const f of removedFiles) { try { await store.deleteFile(f); } catch (e) {} } removedFiles = []; }
 
   // ---------------- datos ----------------
   async function loadAll() {
@@ -223,6 +264,7 @@
       ${t.description ? `<p class="card-desc">${esc(t.description)}</p>` : ""}
       <div class="card-foot">
         ${t.due_date ? `<span class="due ${dueCls}">📅 ${dueCls === "overdue" ? "Venció " : ""}${esc(fmtDay(t.due_date))}</span>` : ""}
+        ${(t.attachments || []).length ? `<span class="due" title="Archivos adjuntos">📎 ${t.attachments.length}</span>` : ""}
         ${t.reminder_at && !t.reminder_sent ? `<span class="bell-mini" title="Recordatorio: ${esc(fmtDateTime(t.reminder_at))}">⏰</span>` : ""}
         <span class="spacer"></span>
         ${avatar(m, "sm")}${m ? `<span style="font-size:12px;font-weight:600">${esc(m.name.split(" ")[0])}</span>` : ""}
@@ -284,6 +326,7 @@
             <span class="avatars" style="margin-left:auto">${(n.attendees || []).map(id => avatar(member(id), "sm")).join("")}</span></div>
           <h3>${esc(n.title)}</h3>
           ${n.content ? `<div class="note-body">${esc(n.content)}</div>` : ""}
+          ${(n.attachments || []).length ? `<div class="note-meta" style="margin-bottom:8px">📎 ${n.attachments.length} archivo(s): ${n.attachments.slice(0, 3).map(a => esc(a.name)).join(", ")}${n.attachments.length > 3 ? "…" : ""}</div>` : ""}
           ${n.agreements ? `<div class="note-agree"><b>Acuerdos</b>\n${esc(n.agreements)}</div>` : ""}
         </article>`;
       }).join("")}</div>` : `<div class="empty-state"><img src="assets/icon-192.png" alt="" /><p>No hay notas con estos filtros.</p><button class="btn btn-primary" data-act="new-note">Crear la primera nota</button></div>`}
@@ -394,12 +437,14 @@
     $modal.innerHTML = `<div class="overlay" data-act="close-modal"><div class="modal" role="dialog" aria-modal="true">${html}</div></div>`;
     const first = $modal.querySelector("input:not([type=color]),textarea");
     if (first && window.innerWidth > 760) first.focus();
+    renderAttList();
     if (onMount) onMount($modal.querySelector(".modal"));
   }
-  function closeModal() { $modal.innerHTML = ""; }
+  function closeModal() { $modal.innerHTML = ""; modalFiles = []; removedFiles = []; }
   const opt = (arr, sel, empty) => (empty != null ? `<option value="">${empty}</option>` : "") + arr.map(x => `<option value="${x.id}" ${x.id === sel ? "selected" : ""}>${esc(x.name || x.label)}</option>`).join("");
 
   function taskModal(task, defaults) {
+    modalFiles = ((task && task.attachments) || []).map(f => ({ ...f })); removedFiles = [];
     const t = task || Object.assign({ title: "", description: "", status: "pendiente", priority: "media", assignee_id: S.filters.member && S.filters.member !== "none" ? S.filters.member : S.me, project_id: S.filters.project || "", due_date: "", reminder_at: null }, defaults || {});
     openModal(`<form data-form="task" data-id="${t.id || ""}">
       <h2>${task ? "Editar tarea" : "Nueva tarea"}<button type="button" class="close" data-act="close-modal">×</button></h2>
@@ -413,6 +458,7 @@
         <div class="field"><label>Fecha límite</label><input class="input" type="date" name="due_date" value="${esc(t.due_date || "")}" /></div>
         <div class="field"><label>Recordatorio</label><input class="input" type="datetime-local" name="reminder_at" value="${esc(toLocalInput(t.reminder_at))}" />
           <span class="hint">${t.reminder_sent ? "Ya se envió. Cambia la hora para programar otro." : "Avisa al responsable en esa fecha y hora."}</span></div>
+        ${attachmentsField()}
       </div>
       <div class="modal-actions">
         ${task ? '<button type="button" class="btn btn-danger" data-act="delete-task">Eliminar</button>' : ""}
@@ -423,6 +469,7 @@
   }
 
   function noteModal(note) {
+    modalFiles = ((note && note.attachments) || []).map(f => ({ ...f })); removedFiles = [];
     const n = note || { title: "", meeting_date: today(), project_id: S.filters.project || "", attendees: [S.me], content: "", agreements: "" };
     openModal(`<form data-form="note" data-id="${n.id || ""}">
       <h2>${note ? "Nota de reunión" : "Nueva nota de reunión"}<button type="button" class="close" data-act="close-modal">×</button></h2>
@@ -435,6 +482,7 @@
         <div class="field full"><label>Notas</label><textarea class="input" name="content" rows="6" placeholder="Temas tratados, ideas, decisiones…">${esc(n.content)}</textarea></div>
         <div class="field full"><label>Acuerdos / pendientes</label><textarea class="input" name="agreements" rows="4" placeholder="Un acuerdo por línea. Ej: Grabar reel de tarifas — Camilo">${esc(n.agreements)}</textarea>
           <span class="hint">Escribe un acuerdo por línea con el nombre de la persona y conviértelos en tareas con un clic.</span></div>
+        ${attachmentsField()}
       </div>
       <div class="modal-actions">
         ${note ? '<button type="button" class="btn btn-danger" data-act="delete-note">Eliminar</button>' : ""}
@@ -467,8 +515,10 @@
       assignee_id: fd.get("assignee_id") || null, project_id: fd.get("project_id") || null,
       status: fd.get("status"), priority: fd.get("priority"),
       due_date: fd.get("due_date") || null,
-      reminder_at: reminderLocal ? new Date(reminderLocal).toISOString() : null
+      reminder_at: reminderLocal ? new Date(reminderLocal).toISOString() : null,
+      attachments: cleanFiles()
     };
+    if (modalFiles.some(f => f.uploading)) return toast("Espera a que terminen de subir los archivos");
     const old = id ? byId(S.tasks, id) : null;
     if (!old || old.reminder_at !== data.reminder_at) data.reminder_sent = false;
     try {
@@ -484,6 +534,7 @@
         notify(data.assignee_id, `${member(S.me).name} te asignó «${data.title}»${data.due_date ? " para " + fmtDay(data.due_date).toLowerCase() : ""}`, r && r.id);
         toast("Tarea creada");
       }
+      await purgeRemoved();
       closeModal();
       if (data.reminder_at && "Notification" in window && Notification.permission === "default") toast("Activa las notificaciones para recibir el recordatorio 🔔");
       await reload("tasks");
@@ -493,7 +544,8 @@
   async function saveNote(form) {
     const fd = new FormData(form), id = form.dataset.id;
     const attendees = [...form.querySelectorAll(".pick-chip.on")].map(b => b.dataset.id);
-    const data = { title: fd.get("title").trim(), meeting_date: fd.get("meeting_date"), project_id: fd.get("project_id") || null, attendees, content: fd.get("content"), agreements: fd.get("agreements") };
+    if (modalFiles.some(f => f.uploading)) { toast("Espera a que terminen de subir los archivos"); return false; }
+    const data = { title: fd.get("title").trim(), meeting_date: fd.get("meeting_date"), project_id: fd.get("project_id") || null, attendees, content: fd.get("content"), agreements: fd.get("agreements"), attachments: cleanFiles() };
     try {
       if (id) await store.update("notes", id, data);
       else {
@@ -502,6 +554,7 @@
         form.dataset.id = r.id;
         attendees.forEach(a => notify(a, `${member(S.me).name} compartió la nota «${data.title}»`));
       }
+      await purgeRemoved();
       toast("Nota guardada");
       await reload("notes");
       return true;
@@ -664,16 +717,18 @@
       case "new-note": noteModal(); break;
       case "close-modal": closeModal(); break;
       case "toggle-att": el.classList.toggle("on"); break;
+      case "att-open": openAttachment(modalFiles[+el.dataset.i]); break;
+      case "att-remove": { const [f] = modalFiles.splice(+el.dataset.i, 1); if (f) removedFiles.push(f); renderAttList(); break; }
       case "delete-task": {
         const id = el.closest("form").dataset.id;
         if (!confirm("¿Eliminar esta tarea?")) return;
-        try { await store.remove("tasks", id); closeModal(); toast("Tarea eliminada"); reload("tasks"); } catch (x) { err(x); }
+        try { const tk = byId(S.tasks, id); await store.remove("tasks", id); removedFiles = (tk && tk.attachments) || []; await purgeRemoved(); closeModal(); toast("Tarea eliminada"); reload("tasks"); } catch (x) { err(x); }
         break;
       }
       case "ics": downloadICS(byId(S.tasks, el.closest("form").dataset.id)); break;
       case "delete-note": {
         if (!confirm("¿Eliminar esta nota?")) return;
-        try { await store.remove("notes", el.closest("form").dataset.id); closeModal(); toast("Nota eliminada"); reload("notes"); } catch (x) { err(x); }
+        try { const nt = byId(S.notes, el.closest("form").dataset.id); await store.remove("notes", nt.id); removedFiles = nt.attachments || []; await purgeRemoved(); closeModal(); toast("Nota eliminada"); reload("notes"); } catch (x) { err(x); }
         break;
       }
       case "agree-to-tasks": agreementsToTasks(el.closest("form")); break;
@@ -700,6 +755,7 @@
     if (f === "q") { S.filters.q = e.target.value; lsSet("filters", JSON.stringify(S.filters)); clearTimeout(window.__qT); window.__qT = setTimeout(() => { const pos = e.target.selectionStart; renderMain(); const i = document.querySelector('[data-filter="q"]'); if (i) { i.focus(); i.setSelectionRange(pos, pos); } }, 200); }
   });
   document.addEventListener("change", (e) => {
+    if (e.target.matches("[data-upload]")) return handleUpload(e.target);
     const f = e.target.dataset.filter;
     if (f && f !== "q") setFilter(f, e.target.value);
   });

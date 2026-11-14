@@ -75,6 +75,20 @@ create table if not exists push_subscriptions (
   created_at timestamptz default now()
 );
 
+-- Archivos adjuntos (lista de {name, size, type, path})
+alter table tasks add column if not exists attachments jsonb default '[]'::jsonb;
+alter table notes add column if not exists attachments jsonb default '[]'::jsonb;
+
+-- Carpeta privada para los archivos (Supabase Storage)
+insert into storage.buckets (id, name, public) values ('adjuntos', 'adjuntos', false)
+on conflict (id) do nothing;
+drop policy if exists "equipo_adjuntos_select" on storage.objects;
+drop policy if exists "equipo_adjuntos_insert" on storage.objects;
+drop policy if exists "equipo_adjuntos_delete" on storage.objects;
+create policy "equipo_adjuntos_select" on storage.objects for select to authenticated using (bucket_id = 'adjuntos');
+create policy "equipo_adjuntos_insert" on storage.objects for insert to authenticated with check (bucket_id = 'adjuntos');
+create policy "equipo_adjuntos_delete" on storage.objects for delete to authenticated using (bucket_id = 'adjuntos');
+
 -- Seguridad: solo usuarios con sesión iniciada pueden leer y escribir
 alter table members            enable row level security;
 alter table projects           enable row level security;

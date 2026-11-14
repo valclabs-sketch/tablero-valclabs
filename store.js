@@ -71,6 +71,13 @@
         save(); emit();
       },
       async savePush() {},
+      async uploadFile(file) {
+        if (file.size > 1.5 * 1024 * 1024) throw new Error("En modo local el máximo es 1,5 MB por archivo (con Supabase: 50 MB)");
+        const data = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
+        return { name: file.name, size: file.size, type: file.type, path: uid(), data };
+      },
+      async fileUrl(att) { return att.data; },
+      async deleteFile() {},
       onChange(cb) { listeners.push(cb); },
       resetDemo() { localStorage.removeItem(KEY); load(); emit(); }
     };
@@ -121,6 +128,18 @@
         const json = sub.toJSON();
         check(await sb.from("push_subscriptions").upsert({ member_id: memberId, endpoint: json.endpoint, subscription: json }, { onConflict: "endpoint" }));
       },
+      async uploadFile(file) {
+        if (file.size > 50 * 1024 * 1024) throw new Error("El archivo supera 50 MB");
+        const safe = file.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\w.\-]+/g, "_");
+        const path = new Date().toISOString().slice(0, 7) + "/" + uid() + "-" + safe;
+        check(await sb.storage.from("adjuntos").upload(path, file, { contentType: file.type || "application/octet-stream" }));
+        return { name: file.name, size: file.size, type: file.type, path };
+      },
+      async fileUrl(att) {
+        const data = check(await sb.storage.from("adjuntos").createSignedUrl(att.path, 3600));
+        return data.signedUrl;
+      },
+      async deleteFile(att) { await sb.storage.from("adjuntos").remove([att.path]); },
       onChange(cb) { listeners.push(cb); }
     };
   }

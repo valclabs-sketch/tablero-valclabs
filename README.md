@@ -9,6 +9,7 @@ Funciona en el computador y en el celular (se puede instalar como app).
 - Filtros por **persona, proyecto, urgencia (alta, media, baja), día** (hoy, mañana, próximos 7 días, vencidas, fecha exacta) y **búsqueda por nombre de tarea**.
 - **Notas de reuniones** con asistentes, proyecto y acuerdos. Un botón convierte cada acuerdo en una tarea y se la asigna a la persona que nombres en la línea.
 - **Notificaciones**: cuando te asignan una tarea, la mueven o llega la hora de un recordatorio. También avisa una vez al día de las tareas que vencen hoy.
+- **Archivos adjuntos** en tareas y notas de reuniones (fotos, PDF, documentos; hasta 50 MB cada uno, guardados de forma privada en Supabase Storage).
 - Botón «Agregar a mi calendario» (.ics) para tener el recordatorio también en Google Calendar o en el calendario del iPhone.
 
 ---
