@@ -123,8 +123,3 @@ begin
   end loop;
 end $$;
 
--- Datos iniciales (cámbialos desde la app en «Equipo»)
-insert into projects (name, color) values
-  ('General', '#5e35b1'),
-  ('Contenido', '#dc0c89')
-on conflict do nothing;

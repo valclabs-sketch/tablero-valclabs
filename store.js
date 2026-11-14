@@ -7,37 +7,13 @@
 
   // ---------------- LOCAL ----------------
   function LocalStore() {
-    const KEY = "tablero_valclabs_v1";
+    const KEY = "tablero_valclabs_v2";
+    try { localStorage.removeItem("tablero_valclabs_v1"); } catch (e) {} // borra los datos de prueba antiguos
     const listeners = [];
     let db;
 
-    function isoDay(offset) {
-      const d = new Date(); d.setDate(d.getDate() + offset);
-      return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
-    }
     function seed() {
-      const m1 = uid(), m2 = uid(), m3 = uid(), p1 = uid(), p2 = uid();
-      return {
-        members: [
-          { id: m1, name: "Valentina", email: "", color: "#5e35b1", created_at: nowIso() },
-          { id: m2, name: "Camilo", email: "", color: "#dc0c89", created_at: nowIso() },
-          { id: m3, name: "Laura", email: "", color: "#9575cd", created_at: nowIso() }
-        ],
-        projects: [
-          { id: p1, name: "Contenido", color: "#dc0c89", created_at: nowIso() },
-          { id: p2, name: "Web", color: "#5e35b1", created_at: nowIso() }
-        ],
-        tasks: [
-          { id: uid(), title: "Grabar reel de tarifas", description: "Guion listo en Drive", status: "pendiente", priority: "alta", assignee_id: m1, project_id: p1, due_date: isoDay(0), reminder_at: null, reminder_sent: false, position: 1, created_at: nowIso(), updated_at: nowIso() },
-          { id: uid(), title: "Editar carrusel de Google", description: "", status: "en_progreso", priority: "media", assignee_id: m2, project_id: p1, due_date: isoDay(1), reminder_at: null, reminder_sent: false, position: 1, created_at: nowIso(), updated_at: nowIso() },
-          { id: uid(), title: "Actualizar landing del curso", description: "Cambiar precios y testimonios", status: "revision", priority: "media", assignee_id: m3, project_id: p2, due_date: isoDay(3), reminder_at: null, reminder_sent: false, position: 1, created_at: nowIso(), updated_at: nowIso() },
-          { id: uid(), title: "Publicar historia de reseña", description: "", status: "hecho", priority: "baja", assignee_id: m1, project_id: p1, due_date: isoDay(-1), reminder_at: null, reminder_sent: false, position: 1, created_at: nowIso(), updated_at: nowIso() }
-        ],
-        notes: [
-          { id: uid(), title: "Reunión semanal de contenido", meeting_date: isoDay(-2), project_id: p1, attendees: [m1, m2, m3], content: "Revisamos métricas de la semana. Los reels de humor tienen mejor alcance.", agreements: "Grabar reel de tarifas — Valentina\nEditar carrusel de Google — Camilo", created_at: nowIso(), updated_at: nowIso() }
-        ],
-        notifications: []
-      };
+      return { members: [], projects: [], tasks: [], notes: [], notifications: [] };
     }
     function load() {
       try { db = JSON.parse(localStorage.getItem(KEY)); } catch (e) { db = null; }
@@ -79,7 +55,6 @@
       async fileUrl(att) { return att.data; },
       async deleteFile() {},
       onChange(cb) { listeners.push(cb); },
-      resetDemo() { localStorage.removeItem(KEY); load(); emit(); }
     };
   }
 

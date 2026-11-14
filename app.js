@@ -432,8 +432,7 @@
             : '<button class="btn btn-accent" data-act="enable-notif">🔔 Activar notificaciones</button>') : '<span class="chip">Este navegador no admite notificaciones. En iPhone: instala la app (Compartir → Agregar a inicio).</span>'}
           <span class="right">
             ${!isStandalone() ? '<button class="btn btn-ghost" data-act="install">📲 Instalar app</button>' : ""}
-            <button class="btn btn-ghost" data-act="switch-me">Cambiar de persona</button>
-            ${store.mode === "cloud" ? '<button class="btn btn-danger" data-act="logout">Cerrar sesión</button>' : '<button class="btn btn-danger" data-act="reset-demo">Borrar datos de prueba</button>'}
+            ${store.mode === "cloud" ? '<button class="btn btn-danger" data-act="logout">Cerrar sesión</button>' : ""}
           </span>
         </div>
       </div>
@@ -493,10 +492,10 @@
     const email = (S.user && S.user.email) || "";
     $app.innerHTML = `<div class="auth"><div class="auth-card">
       <img class="logo" src="assets/logo.png" alt="ValClabs" />
-      <h1>¿Quién eres?</h1>
+      <h1>${S.members.length ? "¿Quién eres?" : "Crea tu perfil para empezar"}</h1>
       <div class="who-list">${S.members.map(m => `<button class="who-item" data-act="pick-me" data-id="${m.id}">${avatar(m)} ${esc(m.name)}</button>`).join("")}</div>
       <form class="add-row" data-form="add-me" style="margin-top:16px">
-        <input class="input" name="name" placeholder="Soy nuevo/a: mi nombre" required />
+        <input class="input" name="name" placeholder="${S.members.length ? "Soy nuevo/a: mi nombre" : "Tu nombre"}" required />
         <button class="btn btn-primary">Unirme</button>
       </form>
       ${email ? `<p class="auth-msg">Sesión: ${esc(email)}</p>` : ""}
@@ -563,7 +562,7 @@
         <div class="field full"><label>Asistentes</label><div class="pick-chips">${S.members.map(m =>
           `<button type="button" class="pick-chip ${(n.attendees || []).includes(m.id) ? "on" : ""}" data-act="toggle-att" data-id="${m.id}">${avatar(m, "sm")}${esc(m.name)}</button>`).join("")}</div></div>
         <div class="field full"><label>Notas</label><textarea class="input" name="content" rows="6" placeholder="Temas tratados, ideas, decisiones…">${esc(n.content)}</textarea></div>
-        <div class="field full"><label>Acuerdos / pendientes</label><textarea class="input" name="agreements" rows="4" placeholder="Un acuerdo por línea. Ej: Grabar reel de tarifas — Camilo">${esc(n.agreements)}</textarea>
+        <div class="field full"><label>Acuerdos / pendientes</label><textarea class="input" name="agreements" rows="4" placeholder="Un acuerdo por línea. Ej: Grabar reel de tarifas — nombre de la persona">${esc(n.agreements)}</textarea>
           <span class="hint">Escribe un acuerdo por línea con el nombre de la persona y conviértelos en tareas con un clic.</span></div>
         ${attachmentsField()}
       </div>
@@ -863,9 +862,7 @@
         break;
       }
       case "pick-me": setMe(el.dataset.id); break;
-      case "switch-me": S.me = null; lsSet("me", ""); render(); break;
       case "logout": await store.signOut(); S.user = null; S.me = null; lsSet("me", ""); render(); break;
-      case "reset-demo": if (confirm("¿Borrar todos los datos de este navegador y volver a los de ejemplo?")) { store.resetDemo(); S.me = null; lsSet("me", ""); await reload(); } break;
       case "enable-notif": enableNotifications(); break;
       case "install": installApp(); break;
       case "install-dismiss": lsSet("install_dismissed", "1"); render(); break;
