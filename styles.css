@@ -276,3 +276,12 @@ textarea.input { resize: vertical; min-height: 90px; line-height: 1.5; }
 
 .modal-actions .chip { white-space: normal; line-height: 1.4; }
 .modal-actions .right { flex-wrap: wrap; }
+
+.account-menu { padding-bottom: 6px; }
+.acc-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.acc-head div { display: flex; flex-direction: column; min-width: 0; }
+.acc-head small { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
+.acc-item { display: block; width: 100%; text-align: left; border: 0; background: #fff; padding: 13px 16px; font-size: 14.5px; font-weight: 600; color: var(--text); }
+.acc-item:hover { background: var(--lav-bg); }
+.acc-item.danger { color: var(--danger); border-top: 1px solid var(--border); margin-top: 4px; }
+.help-list { margin: 0; padding-left: 20px; display: grid; gap: 10px; font-size: 14px; line-height: 1.5; }

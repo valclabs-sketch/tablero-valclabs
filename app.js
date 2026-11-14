@@ -20,7 +20,7 @@
     me: null, user: null,
     view: lsGet("view") || "board",
     filters: Object.assign({ member: "", project: "", priority: "", day: "", date: "", q: "" }, lsGetJSON("filters") || {}),
-    filtersOpen: false, notifOpen: false
+    filtersOpen: false, notifOpen: false, menuOpen: false
   };
   let modalFiles = [], removedFiles = []; // adjuntos del formulario abierto
   let seenNotifs = null; // ids ya vistos (para avisar solo de los nuevos)
@@ -149,6 +149,53 @@
       <button class="btn btn-accent" data-act="install">Instalar</button><button class="install-x" data-act="install-dismiss" aria-label="Cerrar">×</button></div>`;
   }
 
+  // ---------------- invitar y probar avisos ----------------
+  const BOARD_URL = location.href.split("#")[0].split("?")[0];
+  async function shareInvite() {
+    const text = "Te invito al tablero de tareas del equipo ValClabs 🚀\nÁbrelo aquí, toca «Soy nuevo/a: crear cuenta» y después instálalo en tu celular:";
+    if (navigator.share) {
+      try { await navigator.share({ title: "Tablero ValClabs", text, url: BOARD_URL }); return; } catch (e) { if (e.name === "AbortError") return; }
+    }
+    let copied = false;
+    try { await navigator.clipboard.writeText(text + " " + BOARD_URL); copied = true; } catch (e) {}
+    openModal(`<h2>👥 Invitar al equipo<button type="button" class="close" data-act="close-modal">×</button></h2>
+      <p style="margin:0 0 10px;font-size:14px;line-height:1.5">${copied ? "✅ Copié la invitación. Pégala en WhatsApp, correo o donde hables con tu equipo." : "Copia este enlace y envíalo a tu equipo:"}</p>
+      <input class="input" readonly value="${esc(BOARD_URL)}" style="width:100%" onclick="this.select()" />
+      <div class="modal-actions">
+        <a class="btn btn-ghost" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(text + " " + BOARD_URL)}">Enviar por WhatsApp</a>
+        <span class="right"><button type="button" class="btn btn-primary" data-act="close-modal">Listo</button></span>
+      </div>`);
+  }
+  function notifHelpHTML() {
+    const ua = navigator.userAgent;
+    if (isIOS()) return isStandalone()
+      ? "<li>iPhone: <b>Ajustes → Notificaciones → Tablero</b> → activa «Permitir notificaciones».</li><li>Revisa que no esté activo un modo <b>Concentración / No molestar</b>.</li>"
+      : "<li>En iPhone las notificaciones <b>solo funcionan con la app instalada</b>: Safari → Compartir → «Agregar a pantalla de inicio», ábrela desde el ícono y vuelve a probar.</li>";
+    if (/android/i.test(ua)) return "<li>Android: <b>Ajustes → Aplicaciones → Chrome</b> (o «Tablero» si la instalaste) <b>→ Notificaciones</b> → actívalas.</li><li>Revisa que no esté activo <b>No molestar</b>.</li>";
+    if (/Mac/i.test(ua)) return "<li>Mac: <b>Ajustes del Sistema → Notificaciones</b> → busca tu navegador (Chrome, Safari, Edge…) → activa «Permitir notificaciones» y elige estilo «Avisos» o «Alertas».</li><li>Revisa que no esté activo un modo <b>Concentración / No molestar</b> (ícono de luna arriba a la derecha).</li>";
+    if (/Windows/i.test(ua)) return "<li>Windows: <b>Configuración → Sistema → Notificaciones</b> → activa las notificaciones y tu navegador.</li><li>Revisa que no esté activo <b>No molestar / Asistente de concentración</b>.</li>";
+    return "<li>Revisa en los ajustes de tu sistema que tu navegador tenga permiso para mostrar notificaciones.</li>";
+  }
+  async function testNotification() {
+    if (!("Notification" in window)) return openModal(`<h2>🔔 Notificaciones<button type="button" class="close" data-act="close-modal">×</button></h2><ul class="help-list">${notifHelpHTML()}</ul>`);
+    if (Notification.permission === "default") return enableNotifications();
+    if (Notification.permission === "denied") {
+      return openModal(`<h2>🔔 Notificaciones bloqueadas<button type="button" class="close" data-act="close-modal">×</button></h2>
+        <p style="font-size:14px;line-height:1.5;margin:0 0 10px">Este navegador tiene bloqueadas las notificaciones del tablero. Para activarlas:</p>
+        <ul class="help-list"><li>Toca el <b>candado 🔒</b> junto a la dirección de la página → <b>Notificaciones → Permitir</b>, y recarga.</li>${notifHelpHTML()}</ul>`);
+    }
+    let error = "";
+    try {
+      const reg = swReg || await navigator.serviceWorker.ready;
+      await reg.showNotification("Tablero ValClabs", { body: "¡Las notificaciones funcionan! 🚀", icon: "assets/icon-192.png", tag: "prueba", renotify: true });
+    } catch (e) { error = e.message || String(e); }
+    if (S.me) subscribePush();
+    openModal(`<h2>🔔 Prueba enviada<button type="button" class="close" data-act="close-modal">×</button></h2>
+      ${error ? `<p class="install-warn">El navegador no pudo mostrarla: ${esc(error)}</p>` : `<p style="font-size:14px;line-height:1.5;margin:0 0 10px">El tablero envió la notificación. <b>Si no la viste aparecer</b>, la está bloqueando tu dispositivo. Revisa esto:</p>`}
+      <ul class="help-list">${notifHelpHTML()}</ul>
+      <div class="modal-actions"><button type="button" class="btn btn-ghost" data-act="test-notif">Probar otra vez</button><span class="right"><button type="button" class="btn btn-primary" data-act="close-modal">Sí me llegó</button></span></div>`);
+  }
+
   // ---------------- datos ----------------
   async function loadAll() {
     const [members, projects, tasks, notes, notifications] = await Promise.all(
@@ -230,7 +277,7 @@
           ${store.mode === "local" ? '<span class="mode-pill" title="Los datos solo se guardan en este navegador. Configura Supabase para compartir con el equipo.">Modo local</span>' : ""}
           ${!isStandalone() ? '<button class="btn btn-ghost install-top" data-act="install">📲 Instalar app</button>' : ""}
           <button class="icon-btn" data-act="notif" aria-label="Notificaciones">${icon.bell}${unread ? `<span class="badge">${unread > 99 ? "99+" : unread}</span>` : ""}</button>
-          <button class="me-btn" data-act="view" data-v="team" title="Tu perfil">${avatar(me)}<span class="me-name">${esc(me.name)}</span></button>
+          <button class="me-btn" data-act="menu" title="Tu cuenta">${avatar(me)}<span class="me-name">${esc(me.name)}</span></button>
         </div>
       </div></header>
       ${installBanner()}
@@ -437,7 +484,8 @@
         </div>
       </div>
       <div class="team-grid">
-        <div class="panel"><h2>Personas</h2><p class="help">Quienes pueden recibir tareas. El correo vincula a cada persona con su inicio de sesión.</p>
+        <div class="panel"><h2>Personas</h2><p class="help">Quienes pueden recibir tareas. Cada persona entra con su propia cuenta desde el enlace del tablero.</p>
+          <button class="btn btn-accent" data-act="invite" style="margin-bottom:10px">👥 Invitar al equipo</button>
           ${S.members.map(m => `<div class="row-item">${avatar(m)}<div class="grow"><div class="name">${esc(m.name)}${m.id === S.me ? " · yo" : ""}</div>
             <div class="sub">${esc(m.email || "sin correo")} · ${open.filter(t => t.assignee_id === m.id).length} abiertas</div></div>
             <button data-act="edit-member" data-id="${m.id}">Editar</button></div>`).join("")}
@@ -463,6 +511,19 @@
   function renderNotifPanel() {
     const $r = document.getElementById("notif-root");
     if (!$r) return;
+    if (S.menuOpen) {
+      const me = member(S.me);
+      $r.innerHTML = `<div class="overlay" data-act="close-notif" style="background:transparent"></div>
+        <div class="notif-panel account-menu">
+          <div class="acc-head">${avatar(me)}<div><b>${esc(me.name)}</b><small>${esc((S.user && S.user.email) || "")}</small></div></div>
+          <button class="acc-item" data-act="invite">👥 Invitar al equipo</button>
+          ${!isStandalone() ? '<button class="acc-item" data-act="install">📲 Instalar app</button>' : ""}
+          <button class="acc-item" data-act="test-notif">🔔 Probar notificaciones</button>
+          <button class="acc-item" data-act="view" data-v="team">⚙️ Equipo y proyectos</button>
+          ${store.mode === "cloud" ? '<button class="acc-item danger" data-act="logout">↩︎ Cerrar sesión</button>' : ""}
+        </div>`;
+      return;
+    }
     if (!S.notifOpen) { $r.innerHTML = ""; return; }
     const mine = S.notifications.filter(n => n.member_id === S.me).sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 50);
     const askPerm = "Notification" in window && Notification.permission === "default";
@@ -813,9 +874,11 @@
     const act = el.dataset.act;
     if ((act === "close-modal" || act === "close-notif") && e.target !== el && !el.matches("button")) return; // clic dentro del modal
     switch (act) {
-      case "view": e.preventDefault(); S.view = el.dataset.v; lsSet("view", S.view); S.notifOpen = false; render(); window.scrollTo(0, 0); break;
-      case "notif": S.notifOpen = !S.notifOpen; renderNotifPanel(); break;
-      case "close-notif": S.notifOpen = false; renderNotifPanel(); break;
+      case "view": e.preventDefault(); S.view = el.dataset.v; lsSet("view", S.view); S.notifOpen = false; S.menuOpen = false; render(); window.scrollTo(0, 0); break;
+      case "notif": S.menuOpen = false; S.notifOpen = !S.notifOpen; renderNotifPanel(); break;
+      case "menu": S.notifOpen = false; S.menuOpen = !S.menuOpen; renderNotifPanel(); break;
+      case "invite": S.menuOpen = false; renderNotifPanel(); shareInvite(); break;
+      case "close-notif": S.notifOpen = false; S.menuOpen = false; renderNotifPanel(); break;
       case "read-all": {
         const mine = S.notifications.filter(n => n.member_id === S.me && !n.read);
         mine.forEach(n => n.read = true); render(); S.notifOpen = true; renderNotifPanel();
@@ -861,11 +924,11 @@
         break;
       }
       case "pick-me": setMe(el.dataset.id); break;
-      case "logout": await store.signOut(); S.user = null; S.me = null; lsSet("me", ""); render(); break;
+      case "logout": if (!confirm("¿Cerrar sesión en este dispositivo?")) return; S.menuOpen = false; await store.signOut(); S.user = null; S.me = null; lsSet("me", ""); render(); break;
       case "enable-notif": enableNotifications(); break;
       case "install": installApp(); break;
       case "install-dismiss": lsSet("install_dismissed", "1"); render(); break;
-      case "test-notif": showSystemNotification("Tablero ValClabs", "¡Las notificaciones funcionan! 🚀"); toast("Notificación enviada"); break;
+      case "test-notif": S.menuOpen = false; renderNotifPanel(); testNotification(); break;
     }
   });
 
