@@ -268,14 +268,56 @@
         ${(t.attachments || []).length ? `<span class="due" title="Archivos adjuntos">📎 ${t.attachments.length}</span>` : ""}
         ${t.reminder_at && !t.reminder_sent ? `<span class="bell-mini" title="Recordatorio: ${esc(fmtDateTime(t.reminder_at))}">⏰</span>` : ""}
         <span class="spacer"></span>
+        <button type="button" class="move-btn" data-act="move" data-id="${t.id}" title="Mover a otra columna">Mover →</button>
         ${avatar(m, "sm")}${m ? `<span style="font-size:12px;font-weight:600">${esc(m.name.split(" ")[0])}</span>` : ""}
       </div>
     </article>`;
   }
 
+  async function moveTask(t, status, position) {
+    if (!t) return;
+    if (position == null) {
+      const col = S.tasks.filter(x => x.status === status && x.id !== t.id);
+      position = col.length ? Math.max(...col.map(x => x.position || 0)) + 1 : 1;
+    }
+    const oldStatus = t.status;
+    Object.assign(t, { status, position });
+    try {
+      await store.update("tasks", t.id, { status, position });
+      if (oldStatus !== status) {
+        const st = STATUSES.find(s => s.id === status).label;
+        if (t.assignee_id && t.assignee_id !== S.me) notify(t.assignee_id, `${member(S.me).name} movió «${t.title}» a ${st}`, t.id);
+        if (status === "hecho" && t.created_by && t.created_by !== S.me && t.created_by !== t.assignee_id) notify(t.created_by, `«${t.title}» quedó terminada ✅`, t.id);
+        toast("Movida a " + st);
+      }
+      renderMain();
+    } catch (e) { err(e); reload("tasks"); }
+  }
+
+  function moveMenu(t) {
+    openModal(`<h2>Mover «${esc(t.title)}»<button type="button" class="close" data-act="close-modal">×</button></h2>
+      <div class="move-list">${STATUSES.map(s => `<button type="button" class="move-opt ${s.id === t.status ? "current" : ""}" data-act="move-to" data-id="${t.id}" data-status="${s.id}" ${s.id === t.status ? "disabled" : ""}>
+        <span class="col-dot" style="background:${s.color}"></span>${s.label}${s.id === t.status ? " <small>(actual)</small>" : ""}</button>`).join("")}</div>`);
+  }
+
+  // Pastillas de columnas (celular): resalta la columna visible
+  let activeCol = 0;
+  function syncPills(board) {
+    const cols = [...board.querySelectorAll(".column")];
+    const left = board.scrollLeft;
+    let best = 0, bestD = Infinity;
+    cols.forEach((c, i) => { const d = Math.abs(c.offsetLeft - board.offsetLeft - 16 - left); if (d < bestD) { bestD = d; best = i; } });
+    activeCol = best;
+    document.querySelectorAll(".col-pill").forEach((p, i) => p.classList.toggle("active", i === best));
+    const pill = document.querySelectorAll(".col-pill")[best], bar = pill && pill.parentElement;
+    if (pill && bar.scrollWidth > bar.clientWidth) bar.scrollTo({ left: pill.offsetLeft - bar.offsetLeft - 16, behavior: "smooth" });
+  }
+
   function renderBoard($m) {
     const tasks = filteredTasks();
-    $m.innerHTML = `<div class="board">${STATUSES.map(s => {
+    const counts = STATUSES.map(s => tasks.filter(t => t.status === s.id).length);
+    $m.innerHTML = `<div class="col-pills">${STATUSES.map((s, i) => `<button class="col-pill ${i === activeCol ? "active" : ""}" data-act="goto-col" data-i="${i}"><span class="col-dot" style="background:${s.color}"></span>${s.label}<b>${counts[i]}</b></button>`).join("")}</div>
+    <div class="board">${STATUSES.map(s => {
       const list = tasks.filter(t => t.status === s.id).sort((a, b) => (a.position || 0) - (b.position || 0));
       return `<section class="column">
         <div class="col-head"><span class="col-dot" style="background:${s.color}"></span><span class="col-title">${s.label}</span><span class="col-count">${list.length}</span>
@@ -285,10 +327,15 @@
       </section>`;
     }).join("")}</div>`;
 
+    const board = $m.querySelector(".board");
+    const col0 = board.querySelectorAll(".column")[activeCol];
+    if (col0 && board.scrollWidth > board.clientWidth) board.scrollLeft = col0.offsetLeft - board.offsetLeft - 16;
+    let raf; board.addEventListener("scroll", () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => syncPills(board)); }, { passive: true });
+
     if (!window.Sortable) return;
     $m.querySelectorAll(".col-list").forEach(el => {
       new Sortable(el, {
-        group: "tasks", animation: 150, delay: 180, delayOnTouchOnly: true, touchStartThreshold: 6,
+        group: "tasks", animation: 150, filter: ".move-btn", preventOnFilter: false, delay: 180, delayOnTouchOnly: true, touchStartThreshold: 6,
         ghostClass: "sortable-ghost", chosenClass: "sortable-chosen",
         onEnd: async (ev) => {
           const id = ev.item.dataset.id, status = ev.to.dataset.status;
@@ -297,20 +344,7 @@
           const pos = id => (byId(S.tasks, id) || {}).position || 0;
           const prev = i > 0 ? pos(ids[i - 1]) : null, next = i < ids.length - 1 ? pos(ids[i + 1]) : null;
           let position = prev == null && next == null ? 1 : prev == null ? next - 1 : next == null ? prev + 1 : (prev + next) / 2;
-          const t = byId(S.tasks, id);
-          if (!t) return;
-          const oldStatus = t.status;
-          Object.assign(t, { status, position });
-          try {
-            await store.update("tasks", id, { status, position });
-            if (oldStatus !== status) {
-              const st = STATUSES.find(s => s.id === status).label;
-              if (t.assignee_id && t.assignee_id !== S.me) notify(t.assignee_id, `${member(S.me).name} movió «${t.title}» a ${st}`, id);
-              if (status === "hecho" && t.created_by && t.created_by !== S.me && t.created_by !== t.assignee_id) notify(t.created_by, `«${t.title}» quedó terminada ✅`, id);
-              toast("Movida a " + st);
-            }
-            renderMain();
-          } catch (e) { err(e); reload("tasks"); }
+          await moveTask(byId(S.tasks, id), status, position);
         }
       });
     });
@@ -731,6 +765,13 @@
       case "new-note": noteModal(); break;
       case "close-modal": closeModal(); break;
       case "toggle-att": el.classList.toggle("on"); break;
+      case "move": moveMenu(byId(S.tasks, el.dataset.id)); break;
+      case "move-to": closeModal(); await moveTask(byId(S.tasks, el.dataset.id), el.dataset.status); break;
+      case "goto-col": {
+        const b = document.querySelector(".board"), c = b && b.querySelectorAll(".column")[+el.dataset.i];
+        if (c) { activeCol = +el.dataset.i; b.scrollTo({ left: c.offsetLeft - b.offsetLeft - 16, behavior: "smooth" }); syncPills(b); document.querySelectorAll(".col-pill").forEach((p, i) => p.classList.toggle("active", i === activeCol)); }
+        break;
+      }
       case "att-open": openAttachment(modalFiles[+el.dataset.i]); break;
       case "att-remove": { const [f] = modalFiles.splice(+el.dataset.i, 1); if (f) removedFiles.push(f); renderAttList(); break; }
       case "delete-task": {
