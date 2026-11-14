@@ -44,6 +44,18 @@ button { cursor: pointer; }
 .me-btn { display: flex; align-items: center; gap: 8px; border: 1px solid var(--border); background: #fff; border-radius: 999px; padding: 4px 12px 4px 4px; font-weight: 600; font-size: 13px; }
 .mode-pill { font-size: 11px; font-weight: 700; padding: 4px 9px; border-radius: 999px; background: #fff4e0; color: var(--warn); }
 
+.install-top { padding: 8px 12px; font-size: 13px; }
+.install-banner { display: flex; align-items: center; gap: 10px; margin: 10px 16px 0; padding: 10px 10px 10px 12px; border-radius: 16px; background: var(--lav-bg); border: 1px solid var(--lav); }
+.install-banner img { width: 40px; height: 40px; border-radius: 10px; background: #fff; }
+.install-banner div { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.install-banner b { font-size: 14px; }
+.install-banner span { font-size: 12px; color: var(--muted); }
+.install-banner .btn { padding: 8px 12px; font-size: 13px; }
+.install-x { border: 0; background: none; color: var(--mid); font-size: 20px; width: 30px; height: 30px; }
+.install-steps ol { padding-left: 22px; margin: 0; display: grid; gap: 12px; font-size: 15px; line-height: 1.5; }
+.install-warn { background: #fff4e0; color: #8a4b00; border-radius: 12px; padding: 10px 12px; font-size: 14px; margin: 0 0 14px; }
+.kbd { display: inline-block; border: 1px solid var(--lav); background: var(--lav-bg); border-radius: 6px; padding: 0 6px; font-weight: 700; color: var(--violet); }
+
 /* ---------- Avatar ---------- */
 .avatar { width: 28px; height: 28px; border-radius: 50%; display: inline-grid; place-items: center; color: #fff; font-size: 11px; font-weight: 700; flex: none; }
 .avatar.sm { width: 22px; height: 22px; font-size: 9.5px; }
@@ -237,6 +249,7 @@ textarea.input { resize: vertical; min-height: 90px; line-height: 1.5; }
 
   .filters { padding: 10px 16px 0; }
   .btn.filter-toggle { display: inline-flex; }
+  .install-top { display: none; }
   .input, select.input, textarea.input, .add-row .input { font-size: 16px; }
   .col-pills { padding: 10px 16px 2px; }
   .move-btn { padding: 6px 11px; font-size: 12px; }
@@ -260,3 +273,6 @@ textarea.input { resize: vertical; min-height: 90px; line-height: 1.5; }
   .modal { border-radius: 22px 22px 0 0; max-height: 92vh; padding: 20px 16px calc(20px + var(--safe-b)); }
   .notif-panel { top: auto; bottom: 0; right: 0; left: 0; width: 100%; border-radius: 22px 22px 0 0; padding-bottom: var(--safe-b); }
 }
+
+.modal-actions .chip { white-space: normal; line-height: 1.4; }
+.modal-actions .right { flex-wrap: wrap; }

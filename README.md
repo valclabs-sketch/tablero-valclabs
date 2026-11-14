@@ -8,7 +8,13 @@ Funciona en el computador y en el celular (se puede instalar como app).
 - Cada tarea tiene responsable, proyecto, urgencia (se ve en la tarjeta), fecha límite y recordatorio.
 - Filtros por **persona, proyecto, urgencia (alta, media, baja), día** (hoy, mañana, próximos 7 días, vencidas, fecha exacta) y **búsqueda por nombre de tarea**.
 - **Notas de reuniones** con asistentes, proyecto y acuerdos. Un botón convierte cada acuerdo en una tarea y se la asigna a la persona que nombres en la línea.
-- **Notificaciones**: cuando te asignan una tarea, la mueven o llega la hora de un recordatorio. También avisa una vez al día de las tareas que vencen hoy.
+- **Notificaciones**:
+  - cuando te asignan una tarea nueva o la mueven de columna;
+  - **antes de la fecha de entrega** (1, 2, 3 días o 1 semana antes; se elige en cada tarea, por defecto 1 día);
+  - **el mismo día de la entrega**;
+  - en un recordatorio extra a la hora que elijas.
+  Los avisos de entrega salen desde las 8 a. m. (hora de Colombia; se cambia en `TABLERO_TZ` dentro de `.github/workflows/recordatorios.yml`).
+- **Instalar como app**: botón «📲 Instalar app» con las instrucciones para iPhone, Android y computador.
 - **Archivos adjuntos** en tareas y notas de reuniones (fotos, PDF, documentos; hasta 50 MB cada uno, guardados de forma privada en Supabase Storage).
 - Botones para llevar la tarea a tu calendario: **Google Calendar** (Android y computador) y **Calendario Apple / Outlook** (iPhone, Mac, Outlook).
 

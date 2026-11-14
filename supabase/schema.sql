@@ -79,6 +79,11 @@ create table if not exists push_subscriptions (
 alter table tasks add column if not exists attachments jsonb default '[]'::jsonb;
 alter table notes add column if not exists attachments jsonb default '[]'::jsonb;
 
+-- Avisos automáticos de entrega (N días antes y el mismo día)
+alter table tasks add column if not exists remind_days_before int default 1;
+alter table tasks add column if not exists due_warned_before boolean default false;
+alter table tasks add column if not exists due_warned_today boolean default false;
+
 -- Carpeta privada para los archivos (Supabase Storage)
 insert into storage.buckets (id, name, public) values ('adjuntos', 'adjuntos', false)
 on conflict (id) do nothing;

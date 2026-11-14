@@ -21,3 +21,4 @@ jobs:
           VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
           VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
           SITE_URL: ${{ secrets.SITE_URL }}
+          TABLERO_TZ: America/Bogota   # zona horaria del equipo

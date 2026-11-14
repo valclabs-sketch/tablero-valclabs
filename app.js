@@ -44,6 +44,7 @@
     const [y, m, d] = s.split("-").map(Number);
     return new Date(y, m - 1, d).toLocaleDateString("es", { day: "numeric", month: "short", year: y !== new Date().getFullYear() ? "numeric" : undefined });
   }
+  function daysUntil(s) { const [y, m, d] = s.split("-").map(Number); const n = new Date(); return Math.round((new Date(y, m - 1, d) - new Date(n.getFullYear(), n.getMonth(), n.getDate())) / 86400000); }
   function fmtDateTime(iso) { return new Date(iso).toLocaleString("es", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }); }
   function timeAgo(iso) {
     const s = (Date.now() - new Date(iso)) / 1000;
@@ -107,6 +108,46 @@
   }
   const cleanFiles = () => modalFiles.filter(f => !f.uploading).map(({ uploading, ...f }) => f);
   async function purgeRemoved() { for (const f of removedFiles) { try { await store.deleteFile(f); } catch (e) {} } removedFiles = []; }
+
+  // ---------------- instalar como app ----------------
+  let installPrompt = null;
+  window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installPrompt = e; if (S.me) render(); });
+  window.addEventListener("appinstalled", () => { installPrompt = null; toast("¡App instalada! 🚀"); render(); });
+  const isStandalone = () => window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+  const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const isMobile = () => isIOS() || /android/i.test(navigator.userAgent);
+  async function installApp() {
+    if (installPrompt) {
+      installPrompt.prompt();
+      const { outcome } = await installPrompt.userChoice;
+      installPrompt = null;
+      if (outcome !== "accepted") toast("Puedes instalarla cuando quieras desde «Instalar app»");
+      return render();
+    }
+    const ios = isIOS(), android = /android/i.test(navigator.userAgent);
+    const inSafari = ios && !/crios|fxios|edgios/i.test(navigator.userAgent);
+    openModal(`<h2>📲 Instalar el tablero<button type="button" class="close" data-act="close-modal">×</button></h2>
+      <div class="install-steps">
+        ${ios ? `${inSafari ? "" : `<p class="install-warn">En iPhone hay que abrir este enlace en <b>Safari</b> para poder instalarlo.</p>`}
+          <ol><li>Toca el botón <b>Compartir</b> <span class="kbd">⬆︎</span> (abajo en el centro, o arriba a la derecha en iPad).</li>
+          <li>Desliza y elige <b>«Agregar a pantalla de inicio»</b>.</li>
+          <li>Toca <b>Agregar</b>. Aparecerá el ícono del cohete 🚀.</li>
+          <li>Abre el tablero <b>desde ese ícono</b> y ve a <b>Equipo → Activar notificaciones</b>.</li></ol>`
+        : android ? `<ol><li>Toca el menú <span class="kbd">⋮</span> de Chrome (arriba a la derecha).</li>
+          <li>Elige <b>«Instalar app»</b> o <b>«Agregar a pantalla principal»</b>.</li>
+          <li>Confirma con <b>Instalar</b>. Aparecerá el ícono del cohete 🚀.</li>
+          <li>Abre el tablero desde el ícono y activa las notificaciones en <b>Equipo</b>.</li></ol>`
+        : `<ol><li>En Chrome o Edge, busca el ícono de instalar <span class="kbd">⊕</span> a la derecha de la barra de direcciones.</li>
+          <li>Haz clic en <b>Instalar</b>. El tablero se abrirá en su propia ventana.</li></ol>
+          <p class="hint">En el celular: abre <b>${esc(location.href.split("#")[0])}</b> y vuelve a tocar «Instalar app».</p>`}
+      </div>
+      <div class="modal-actions"><span class="right"><button type="button" class="btn btn-primary" data-act="close-modal">Entendido</button></span></div>`);
+  }
+  function installBanner() {
+    if (isStandalone() || !isMobile() || lsGet("install_dismissed")) return "";
+    return `<div class="install-banner"><img src="assets/icon-192.png" alt="" /><div><b>Instala el tablero</b><span>Ábrelo como app y recibe avisos</span></div>
+      <button class="btn btn-accent" data-act="install">Instalar</button><button class="install-x" data-act="install-dismiss" aria-label="Cerrar">×</button></div>`;
+  }
 
   // ---------------- datos ----------------
   async function loadAll() {
@@ -187,10 +228,12 @@
         </nav>
         <div class="top-actions">
           ${store.mode === "local" ? '<span class="mode-pill" title="Los datos solo se guardan en este navegador. Configura Supabase para compartir con el equipo.">Modo local</span>' : ""}
+          ${!isStandalone() ? '<button class="btn btn-ghost install-top" data-act="install">📲 Instalar app</button>' : ""}
           <button class="icon-btn" data-act="notif" aria-label="Notificaciones">${icon.bell}${unread ? `<span class="badge">${unread > 99 ? "99+" : unread}</span>` : ""}</button>
           <button class="me-btn" data-act="view" data-v="team" title="Tu perfil">${avatar(me)}<span class="me-name">${esc(me.name)}</span></button>
         </div>
       </div></header>
+      ${installBanner()}
       <section id="filters"></section>
       <main id="main"></main>
       ${S.view === "board" ? '<button class="fab" data-act="new-task" aria-label="Nueva tarea">+</button>' : ""}
@@ -388,6 +431,7 @@
             : perm === "denied" ? '<span class="chip prio-alta">Notificaciones bloqueadas: actívalas en los ajustes del navegador</span>'
             : '<button class="btn btn-accent" data-act="enable-notif">🔔 Activar notificaciones</button>') : '<span class="chip">Este navegador no admite notificaciones. En iPhone: instala la app (Compartir → Agregar a inicio).</span>'}
           <span class="right">
+            ${!isStandalone() ? '<button class="btn btn-ghost" data-act="install">📲 Instalar app</button>' : ""}
             <button class="btn btn-ghost" data-act="switch-me">Cambiar de persona</button>
             ${store.mode === "cloud" ? '<button class="btn btn-danger" data-act="logout">Cerrar sesión</button>' : '<button class="btn btn-danger" data-act="reset-demo">Borrar datos de prueba</button>'}
           </span>
@@ -492,7 +536,10 @@
         <div class="field"><label>Estado</label><select class="input" name="status">${opt(STATUSES, t.status)}</select></div>
         <div class="field"><label>Urgencia</label><select class="input" name="priority">${Object.entries(PRIOS).map(([k, v]) => `<option value="${k}" ${t.priority === k ? "selected" : ""}>${v}</option>`).join("")}</select></div>
         <div class="field"><label>Fecha límite</label><input class="input" type="date" name="due_date" value="${esc(t.due_date || "")}" /></div>
-        <div class="field"><label>Recordatorio</label><input class="input" type="datetime-local" name="reminder_at" value="${esc(toLocalInput(t.reminder_at))}" />
+        <div class="field"><label>Aviso antes de la entrega</label><select class="input" name="remind_days_before">
+          ${[[1, "1 día antes"], [2, "2 días antes"], [3, "3 días antes"], [7, "1 semana antes"], [0, "Solo el mismo día"]].map(([v, l]) => `<option value="${v}" ${+(t.remind_days_before ?? 1) === v ? "selected" : ""}>${l}</option>`).join("")}
+        </select><span class="hint">Además siempre avisa el mismo día de la entrega.</span></div>
+        <div class="field"><label>Recordatorio extra (opcional)</label><input class="input" type="datetime-local" name="reminder_at" value="${esc(toLocalInput(t.reminder_at))}" />
           <span class="hint">${t.reminder_sent ? "Ya se envió. Cambia la hora para programar otro." : "Avisa al responsable en esa fecha y hora."}</span></div>
         ${attachmentsField()}
       </div>
@@ -552,11 +599,13 @@
       status: fd.get("status"), priority: fd.get("priority"),
       due_date: fd.get("due_date") || null,
       reminder_at: reminderLocal ? new Date(reminderLocal).toISOString() : null,
+      remind_days_before: +fd.get("remind_days_before"),
       attachments: cleanFiles()
     };
     if (modalFiles.some(f => f.uploading)) return toast("Espera a que terminen de subir los archivos");
     const old = id ? byId(S.tasks, id) : null;
     if (!old || old.reminder_at !== data.reminder_at) data.reminder_sent = false;
+    if (!old || old.due_date !== data.due_date || +(old.remind_days_before ?? 1) !== data.remind_days_before) { data.due_warned_before = false; data.due_warned_today = false; }
     try {
       if (old) {
         await store.update("tasks", id, data);
@@ -718,13 +767,29 @@
         if (seenNotifs && r) seenNotifs.add(r.id);
       } catch (e) { console.warn(e); }
     }
-    // Aviso diario de tareas que vencen hoy (una vez por día y dispositivo)
-    const key = "due_" + today();
-    if (!lsGet(key)) {
-      const due = S.tasks.filter(t => t.assignee_id === S.me && t.status !== "hecho" && t.due_date === today());
-      if (due.length) {
-        lsSet(key, "1");
-        showSystemNotification("Hoy vencen " + due.length + " tarea(s)", due.map(t => "• " + t.title).join("\n"), "due-today");
+    // Avisos automáticos de entrega: N días antes y el mismo día (desde las 8 a. m.)
+    if (new Date().getHours() >= 8) {
+      const t0 = today();
+      for (const t of S.tasks) {
+        if (t.assignee_id !== S.me || !t.due_date || t.status === "hecho") continue;
+        const days = daysUntil(t.due_date), before = t.remind_days_before == null ? 1 : +t.remind_days_before;
+        let patch = null, text = null;
+        if (t.due_date === t0 && !t.due_warned_today) {
+          patch = { due_warned_today: true, due_warned_before: true };
+          text = `📌 Hoy es la entrega de «${t.title}»`;
+        } else if (before > 0 && days > 0 && days <= before && !t.due_warned_before) {
+          patch = { due_warned_before: true };
+          text = `⏳ «${t.title}» se entrega ${days === 1 ? "mañana" : "en " + days + " días (" + fmtDay(t.due_date) + ")"}`;
+        }
+        if (!patch) continue;
+        Object.assign(t, patch);
+        showSystemNotification(t.due_date === t0 ? "Entrega hoy" : "Entrega próxima", text.replace(/^\S+\s/, ""), "due-" + t.id);
+        toast(text);
+        try {
+          await store.update("tasks", t.id, patch);
+          const r = await store.insert("notifications", { member_id: S.me, text, task_id: t.id, read: false });
+          if (seenNotifs && r) seenNotifs.add(r.id);
+        } catch (e) { console.warn(e); }
       }
     }
     reload("notifications");
@@ -802,6 +867,8 @@
       case "logout": await store.signOut(); S.user = null; S.me = null; lsSet("me", ""); render(); break;
       case "reset-demo": if (confirm("¿Borrar todos los datos de este navegador y volver a los de ejemplo?")) { store.resetDemo(); S.me = null; lsSet("me", ""); await reload(); } break;
       case "enable-notif": enableNotifications(); break;
+      case "install": installApp(); break;
+      case "install-dismiss": lsSet("install_dismissed", "1"); render(); break;
       case "test-notif": showSystemNotification("Tablero ValClabs", "¡Las notificaciones funcionan! 🚀"); toast("Notificación enviada"); break;
     }
   });
