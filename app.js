@@ -504,14 +504,17 @@
   function renderContent($m) {
     const projChips = [["", "Todos", "#5e35b1"], ...S.projects.map(p => [p.id, p.name, p.color])];
     if (S.content_plans.some(pl => !pl.project_id)) projChips.push(["none", "Sin proyecto", "#9575cd"]);
-    const projBar = `<div class="proj-bar">${projChips.map(([id, name, color]) => {
-      const c = S.reels.filter(r => { const pl = planOf(r); return pl && (!id || (id === "none" ? !pl.project_id : pl.project_id === id)); }).length;
-      return `<button class="pj ${S.contentProject === id ? "on" : ""}" data-act="content-project" data-v="${id}" style="--pc:${esc(color)}"><span class="pj-dot"></span>${esc(name)} <b>${c}</b></button>`; }).join("")}</div>`;
+    const countFor = id => S.reels.filter(r => { const pl = planOf(r); return pl && (!id || (id === "none" ? !pl.project_id : pl.project_id === id)); }).length;
+    const projBar = `<div class="proj-pick">
+      <label class="proj-label" for="proj-select">Ver contenido de</label>
+      <select id="proj-select" class="input proj-select" data-act-change="content-project">${projChips.map(([id, name]) => `<option value="${id}" ${S.contentProject === id ? "selected" : ""}>${esc(id ? name : "Todos los proyectos")} (${countFor(id)} reels)</option>`).join("")}</select>
+      <div class="proj-bar">${projChips.map(([id, name, color]) => `<button class="pj ${S.contentProject === id ? "on" : ""}" data-act="content-project" data-v="${id}" style="--pc:${esc(color)}"><span class="pj-dot"></span>${esc(name)} <b>${countFor(id)}</b></button>`).join("")}</div>
+    </div>`;
     const { plans, plan, reels: all } = contentScope();
     const projName = S.contentProject ? (S.contentProject === "none" ? "Sin proyecto" : (project(S.contentProject) || {}).name) : "Todos los proyectos";
     if (!plans.length) {
       $m.innerHTML = `<div class="page"><div class="page-head content-head"><div><span class="eyebrow">Contenido</span><h1>${esc(projName)}</h1></div></div>${projBar}
-        <div class="empty-state"><img src="assets/icon-192.png" alt="" /><p>Este proyecto todavía no tiene plan de contenido.</p><p class="hint">Pídele a Claude que cree uno nuevo para este proyecto.</p></div></div>`;
+        <div class="empty-state"><img src="assets/icon-192.png" alt="" /><p><b>No hay contenido para ${esc(projName)}.</b></p><p class="hint">Todavía no se ha cargado ningún plan de reels para este proyecto.</p>${S.contentProject ? '<button class="btn btn-ghost" data-act="content-project" data-v="">Ver todos los proyectos</button>' : ""}</div></div>`;
       return;
     }
     const n = all.length, cnt = id => all.filter(r => r[id]).length;
@@ -1164,6 +1167,7 @@
   });
   document.addEventListener("change", (e) => {
     if (e.target.matches("[data-upload]")) return handleUpload(e.target);
+    if (e.target.dataset.actChange === "content-project") { S.contentProject = e.target.value; S.contentPlan = ""; lsSet("content_project", S.contentProject); renderMain(); return; }
     if (e.target.dataset.actChange === "content-plan") { S.contentPlan = e.target.value; renderMain(); return; }
     if (e.target.dataset.actChange === "plan-project") {
       const pl = byId(S.content_plans, e.target.dataset.id), v = e.target.value || null;
