@@ -200,7 +200,7 @@ textarea.input { resize: vertical; min-height: 90px; line-height: 1.5; }
 .att-drop span { font-weight: 500; color: var(--muted); font-size: 12px; }
 
 /* ---------- Notifications panel ---------- */
-.notif-panel { position: fixed; top: 60px; right: 16px; z-index: 40; width: min(360px, calc(100vw - 32px)); background: #fff; border: 1px solid var(--border); border-radius: 18px; box-shadow: var(--shadow-lg); overflow: hidden; }
+.notif-panel { position: fixed; top: 60px; right: 16px; z-index: 55; width: min(360px, calc(100vw - 32px)); background: #fff; border: 1px solid var(--border); border-radius: 18px; box-shadow: var(--shadow-lg); overflow: hidden; }
 .notif-head { display: flex; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--border); font-weight: 700; }
 .notif-head button { margin-left: auto; }
 .notif-list { max-height: 60vh; overflow: auto; }
