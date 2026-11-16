@@ -415,3 +415,29 @@ textarea.input { resize: vertical; min-height: 90px; line-height: 1.5; }
   .reel-main .stages .stage { flex-direction: column; gap: 3px; padding: 7px 2px; border-radius: 12px; font-size: 11.5px; min-width: 0; }
   .reel-main .stages { gap: 5px; }
 }
+
+/* contenido por proyecto + mandar al tablero */
+.proj-bar { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 12px; scrollbar-width: none; }
+.proj-bar::-webkit-scrollbar { display: none; }
+.pj { flex: none; display: inline-flex; align-items: center; gap: 7px; border: 1.5px solid var(--border); background: #fff; border-radius: 12px; padding: 8px 12px; font-size: 13.5px; font-weight: 700; color: var(--text); }
+.pj-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--pc); }
+.pj b { font-size: 11.5px; color: var(--muted); background: var(--lav-bg); border-radius: 999px; padding: 0 7px; }
+.pj.on { border-color: var(--pc); background: color-mix(in srgb, var(--pc) 10%, #fff); }
+.plan-tools { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
+.plan-tools .btn { margin-left: auto; }
+.plan-sel { max-width: 320px; }
+.plan-proj { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; color: var(--muted); }
+.plan-proj .input { padding: 7px 10px; }
+.reel-foot { margin-top: 8px; display: flex; justify-content: flex-end; }
+.board-btn { border: 1px solid var(--lav); background: #fff; color: var(--violet); border-radius: 999px; padding: 5px 12px; font-size: 12.5px; font-weight: 700; }
+.board-btn:hover { background: var(--lav-bg); }
+.board-btn.on { border-color: transparent; background: #eef8f2; color: var(--ok); }
+.rm-board { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: -4px 0 14px; }
+.rm-board .hint { font-size: 12px; color: var(--muted); flex: 1; min-width: 180px; }
+@media (max-width: 760px) {
+  .plan-tools .btn { margin-left: 0; width: 100%; justify-content: center; }
+  .plan-sel, .plan-proj { width: 100%; max-width: none; }
+  .plan-proj .input { flex: 1; }
+  .reel-foot { justify-content: stretch; }
+  .reel-foot .board-btn { width: 100%; padding: 8px; }
+}

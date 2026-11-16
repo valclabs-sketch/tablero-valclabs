@@ -172,3 +172,7 @@ do $$ begin
   begin alter publication supabase_realtime add table content_plans; exception when duplicate_object then null; end;
   begin alter publication supabase_realtime add table reels; exception when duplicate_object then null; end;
 end $$;
+
+-- Contenido por proyecto y enlace reel → tarea del tablero
+alter table content_plans add column if not exists project_id uuid references projects(id) on delete set null;
+alter table reels add column if not exists task_id uuid references tasks(id) on delete set null;

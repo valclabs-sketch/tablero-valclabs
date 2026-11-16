@@ -17,7 +17,7 @@
 
   const S = {
     members: [], projects: [], tasks: [], notes: [], notifications: [], reels: [], content_plans: [],
-    contentTab: lsGet("content_tab") || "reels", reelFilter: "",
+    contentTab: lsGet("content_tab") || "reels", reelFilter: "", contentProject: lsGet("content_project") || "", contentPlan: "",
     me: null, user: null,
     view: lsGet("view") || "board",
     filters: Object.assign({ member: "", project: "", priority: "", day: "", date: "", q: "" }, lsGetJSON("filters") || {}),
@@ -378,6 +378,7 @@
     Object.assign(t, { status, position });
     try {
       await store.update("tasks", t.id, { status, position });
+      if (oldStatus !== status) syncReelFromTask(t);
       if (oldStatus !== status) {
         const st = STATUSES.find(s => s.id === status).label;
         if (t.assignee_id && t.assignee_id !== S.me) notify(t.assignee_id, `${member(S.me).name} movió «${t.title}» a ${st}`, t.id);
@@ -486,21 +487,50 @@
     return `<div class="stages ${big ? "big" : ""}">${STAGES.map(st => `<button type="button" class="stage ${r[st.id] ? "on" : ""}" data-act="reel-stage" data-id="${r.id}" data-stage="${st.id}" aria-pressed="${!!r[st.id]}">
       <span class="st-ic">${r[st.id] ? "✓" : st.icon}</span><span>${st.label}</span>${r[st.id + "_at"] && big ? `<small>${esc(fmtDay(dayStr(new Date(r[st.id + "_at"]))))}</small>` : ""}</button>`).join("")}</div>`;
   }
+  function contentScope() {
+    const pid = S.contentProject;
+    const plans = S.content_plans.filter(pl => !pid || (pid === "none" ? !pl.project_id : pl.project_id === pid)).sort((a, b) => (b.start_date || "").localeCompare(a.start_date || ""));
+    const plan = plans.length === 1 ? plans[0] : plans.find(pl => pl.id === S.contentPlan) || null;
+    const ids = new Set((plan ? [plan] : plans).map(pl => pl.id));
+    return { plans, plan, reels: S.reels.filter(r => ids.has(r.plan_id)) };
+  }
+  const planOf = r => byId(S.content_plans, r.plan_id);
+  function reelTaskStatus(r) { return r.published ? "hecho" : r.edited ? "revision" : r.recorded ? "en_progreso" : "pendiente"; }
+  function boardBtn(r, big) {
+    const t = r.task_id && byId(S.tasks, r.task_id);
+    return t ? `<button type="button" class="${big ? "btn btn-ghost" : "board-btn on"}" data-act="open-reel-task" data-id="${r.id}">✓ En el tablero</button>`
+             : `<button type="button" class="${big ? "btn btn-accent" : "board-btn"}" data-act="reel-to-board" data-id="${r.id}">📋 Mandar al tablero</button>`;
+  }
   function renderContent($m) {
-    const plan = [...S.content_plans].sort((a, b) => (b.start_date || "").localeCompare(a.start_date || ""))[0];
-    if (!plan) { $m.innerHTML = `<div class="page"><div class="empty-state"><img src="assets/icon-192.png" alt="" /><p>Todavía no hay un plan de contenido.</p></div></div>`; return; }
-    const all = S.reels.filter(r => r.plan_id === plan.id).sort((a, b) => (a.publish_date || "").localeCompare(b.publish_date || "") || (a.position - b.position));
+    const projChips = [["", "Todos", "#5e35b1"], ...S.projects.map(p => [p.id, p.name, p.color])];
+    if (S.content_plans.some(pl => !pl.project_id)) projChips.push(["none", "Sin proyecto", "#9575cd"]);
+    const projBar = `<div class="proj-bar">${projChips.map(([id, name, color]) => {
+      const c = S.reels.filter(r => { const pl = planOf(r); return pl && (!id || (id === "none" ? !pl.project_id : pl.project_id === id)); }).length;
+      return `<button class="pj ${S.contentProject === id ? "on" : ""}" data-act="content-project" data-v="${id}" style="--pc:${esc(color)}"><span class="pj-dot"></span>${esc(name)} <b>${c}</b></button>`; }).join("")}</div>`;
+    const { plans, plan, reels: all } = contentScope();
+    const projName = S.contentProject ? (S.contentProject === "none" ? "Sin proyecto" : (project(S.contentProject) || {}).name) : "Todos los proyectos";
+    if (!plans.length) {
+      $m.innerHTML = `<div class="page"><div class="page-head content-head"><div><span class="eyebrow">Contenido</span><h1>${esc(projName)}</h1></div></div>${projBar}
+        <div class="empty-state"><img src="assets/icon-192.png" alt="" /><p>Este proyecto todavía no tiene plan de contenido.</p><p class="hint">Pídele a Claude que cree uno nuevo para este proyecto.</p></div></div>`;
+      return;
+    }
     const n = all.length, cnt = id => all.filter(r => r[id]).length;
     const f = S.reelFilter;
-    const list = all.filter(r => !f || (f === "done" ? r.published : reelStatus(r) === f));
-    const t0 = today();
-    const weeks = {};
+    const list = all.filter(r => !f || (f === "done" ? r.published : reelStatus(r) === f)).sort((a, b) => (a.publish_date || "").localeCompare(b.publish_date || "") || (a.position - b.position));
+    const t0 = today(), weeks = {};
     list.forEach(r => { const k = weekKey(r.publish_date); (weeks[k] = weeks[k] || []).push(r); });
+    const showProj = !S.contentProject;
+    const planSel = plans.length > 1 ? `<select class="input plan-sel" data-act-change="content-plan"><option value="">Todos los planes (${plans.length})</option>${plans.map(pl => `<option value="${pl.id}" ${plan && plan.id === pl.id ? "selected" : ""}>${esc(pl.period || pl.title)}${showProj && project(pl.project_id) ? " · " + esc(project(pl.project_id).name) : ""}</option>`).join("")}</select>` : "";
+    const planProj = plan ? `<label class="plan-proj">Proyecto del plan <select class="input" data-act-change="plan-project" data-id="${plan.id}"><option value="">Sin proyecto</option>${S.projects.map(p => `<option value="${p.id}" ${p.id === plan.project_id ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select></label>` : "";
+    const unsent = all.filter(r => !(r.task_id && byId(S.tasks, r.task_id))).length;
     const tabs = `<div class="seg">${[["reels", "🎬 Reels"], ["guia", "📘 Guía de producción"]].map(([v, l]) => `<button class="seg-btn ${S.contentTab === v ? "on" : ""}" data-act="content-tab" data-v="${v}">${l}</button>`).join("")}</div>`;
-    const head = `<div class="page-head content-head"><div><span class="eyebrow">Plan de contenido · ${esc(plan.period)}</span><h1>${esc(plan.title)}</h1></div></div>
+    const head = `<div class="page-head content-head"><div><span class="eyebrow">Contenido · ${esc(projName)}${plan ? " · " + esc(plan.period) : ""}</span><h1>${esc(plan ? plan.title : "Todos los planes")}</h1></div></div>
+      ${projBar}
+      <div class="plan-tools">${planSel}${planProj}${unsent ? `<button class="btn btn-accent" data-act="all-to-board">📋 Mandar ${unsent === n ? (n === 1 ? "el reel" : "los " + n + " reels") : unsent === 1 ? "1 pendiente" : unsent + " pendientes"} al tablero</button>` : `<span class="chip prio-baja">✓ Todos están en el tablero</span>`}</div>
       <div class="progress-row">${STAGES.map(st => { const c = cnt(st.id); return `<div class="prog"><div class="prog-top"><span>${st.icon} ${st.label}s</span><b>${c}/${n}</b></div><div class="prog-bar"><i style="width:${n ? Math.round(c / n * 100) : 0}%"></i></div></div>`; }).join("")}</div>${tabs}`;
     if (S.contentTab === "guia") {
-      $m.innerHTML = `<div class="page">${head}<article class="guide">${plan.guide_html || "<p>Sin guía.</p>"}</article></div>`;
+      const gp = plan || plans[0];
+      $m.innerHTML = `<div class="page">${head}${!plan ? `<p class="hint">Mostrando la guía de «${esc(gp.period || gp.title)}». Elige un plan arriba para ver otra.</p>` : ""}<article class="guide">${gp.guide_html || "<p>Este plan no tiene guía.</p>"}</article></div>`;
       return;
     }
     const chips = [["", "Todos", n], ["Por grabar", "Por grabar", all.filter(r => reelStatus(r) === "Por grabar").length], ["Por editar", "Por editar", all.filter(r => reelStatus(r) === "Por editar").length], ["Por publicar", "Por publicar", all.filter(r => reelStatus(r) === "Por publicar").length], ["done", "Publicados", cnt("published")]];
@@ -509,17 +539,50 @@
       ${list.length ? Object.keys(weeks).sort().map(k => { const a = dayParts(k), b = dayParts(addDaysFrom(k, 6));
         return `<h3 class="week-h">Semana del ${a.d} ${a.mon} al ${b.d} ${b.mon}</h3><div class="reel-list">${weeks[k].map(r => {
           const p = dayParts(r.publish_date), st = reelStatus(r), late = !r.published && r.publish_date < t0, isToday = r.publish_date === t0;
+          const pj = project((planOf(r) || {}).project_id);
           return `<article class="reel ${r.published ? "done" : ""} ${late ? "late" : ""}" data-reel="${r.id}">
             <div class="reel-date ${isToday ? "today" : ""}"><span>${esc(p.wd)}</span><b>${p.d}</b><small>${esc(r.ig_time || "")}</small></div>
             <div class="reel-main">
-              <div class="reel-tags">${formatPill(r.format)}<span class="chip">${esc(r.duration)}</span>${late ? '<span class="chip prio-alta">Atrasado</span>' : isToday ? '<span class="chip prio-media">Se publica hoy</span>' : ""}<span class="reel-status s-${st === "Publicado" ? "ok" : "todo"}">${st === "Publicado" ? "✓ Publicado" : st}</span></div>
+              <div class="reel-tags">${showProj && pj ? `<span class="chip" style="background:${esc(pj.color)}1a;color:${esc(pj.color)}">${esc(pj.name)}</span>` : ""}${formatPill(r.format)}<span class="chip">${esc(r.duration)}</span>${late ? '<span class="chip prio-alta">Atrasado</span>' : isToday ? '<span class="chip prio-media">Se publica hoy</span>' : ""}<span class="reel-status s-${st === "Publicado" ? "ok" : "todo"}">${st === "Publicado" ? "✓ Publicado" : st}</span></div>
               <h4>${esc(r.title)}</h4>
               <p class="reel-theme">${esc(r.theme)}${member(r.assignee_id) ? " · " + esc(member(r.assignee_id).name) : ""}</p>
               ${stageButtons(r)}
+              <div class="reel-foot">${boardBtn(r)}</div>
             </div>
             <span class="reel-open" aria-hidden="true">›</span>
           </article>`; }).join("")}</div>`; }).join("") : `<div class="empty-state"><p>No hay reels en este estado.</p></div>`}
     </div>`;
+  }
+  async function sendReelToBoard(r, silent) {
+    const existing = r.task_id && byId(S.tasks, r.task_id);
+    if (existing) return existing;
+    const pl = planOf(r) || {}, p = dayParts(r.publish_date), fmt = (FORMATS[r.format] || FORMATS.microfono).label, e = r.entry || {};
+    const status = reelTaskStatus(r), col = S.tasks.filter(t => t.status === status);
+    const data = {
+      title: "🎬 " + r.title,
+      description: `Reel ${fmt} · ${r.duration} · ${r.theme}\nPublicar: ${p.wd} ${p.d} ${p.mon} · Instagram ${r.ig_time} · TikTok ${r.tt_time}${e.text ? `\nTexto de entrada: "${e.text}"` : ""}\n\nGuion completo en Contenido → toca «🎬 Ver guion del reel».`,
+      status, priority: "media", assignee_id: r.assignee_id || S.me, project_id: pl.project_id || null,
+      due_date: r.publish_date, reminder_at: null, reminder_sent: false, remind_days_before: 1,
+      position: col.length ? Math.max(...col.map(t => t.position || 0)) + 1 : 1, created_by: S.me
+    };
+    const t = await store.insert("tasks", data);
+    r.task_id = t.id;
+    await store.update("reels", r.id, { task_id: t.id });
+    S.tasks.push(t);
+    if (data.assignee_id !== S.me) notify(data.assignee_id, `${member(S.me).name} te asignó el reel «${r.title}» para ${fmtDay(r.publish_date).toLowerCase()} 🎬`, t.id);
+    if (!silent) toast("📋 Enviado al tablero en «" + STATUSES.find(s => s.id === status).label + "»");
+    return t;
+  }
+  async function syncReelFromTask(t) {
+    const r = S.reels.find(x => x.task_id === t.id);
+    if (!r) return;
+    const want = { pendiente: 0, en_progreso: 1, revision: 2, hecho: 3 }[t.status];
+    if (want == null) return;
+    const patch = {}, now = new Date().toISOString();
+    STAGES.forEach((st, i) => { const on = i < want; if (!!r[st.id] !== on) { patch[st.id] = on; patch[st.id + "_at"] = on ? now : null; } });
+    if (!Object.keys(patch).length) return;
+    Object.assign(r, patch);
+    try { await store.update("reels", r.id, patch); } catch (e) { console.warn(e); }
   }
   function addDaysFrom(s, n) { const { dt } = dayParts(s); dt.setDate(dt.getDate() + n); return dayStr(dt); }
   function reelModal(r) {
@@ -531,6 +594,7 @@
       <div class="rm-when"><div><small>Publicar</small><b>${esc(p.wd)} ${p.d} ${esc(p.mon)}</b></div><div><small>Instagram</small><b>${esc(r.ig_time)}</b></div><div><small>TikTok</small><b>${esc(r.tt_time)}</b></div>
         <div class="rm-who"><small>Responsable</small><select class="input" data-act-change="reel-assignee" data-id="${r.id}"><option value="">Sin asignar</option>${S.members.map(m => `<option value="${m.id}" ${m.id === r.assignee_id ? "selected" : ""}>${esc(m.name)}</option>`).join("")}</select></div></div>
       ${stageButtons(r, true)}
+      <div class="rm-board">${boardBtn(r, true)}<span class="hint">${r.task_id && byId(S.tasks, r.task_id) ? "La tarjeta del tablero se mueve sola cuando marcas grabado, editado o publicado." : "Crea una tarjeta en el tablero con la fecha de publicación, el responsable y el proyecto."}</span></div>
       ${e.text ? `<div class="rm-entry"><span class="eyebrow">Entrada · primeros 3 segundos</span><div class="rm-hook">"${esc(e.text)}"</div><dl><dt>0 – 1 s</dt><dd>${esc(e.a || "")}</dd><dt>1 – 3 s</dt><dd>${esc(e.b || "")}</dd></dl></div>` : ""}
       <dl class="rm-kv">${(r.details || []).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl>
       <h3 class="rm-h">Guion</h3>
@@ -549,6 +613,8 @@
     rerenderContent(r);
     try {
       await store.update("reels", r.id, patch);
+      const t = r.task_id && byId(S.tasks, r.task_id), ts = reelTaskStatus(r);
+      if (t && t.status !== ts) { t.status = ts; await store.update("tasks", t.id, { status: ts }); }
       toast(turnOn ? `${STAGES[idx].icon} «${r.title}»: ${STAGES[idx].label.toLowerCase()}` : "Estado actualizado");
       if (stage === "published" && turnOn && r.assignee_id && r.assignee_id !== S.me) notify(r.assignee_id, `${member(S.me).name} marcó como publicado «${r.title}» 📲`);
     } catch (e) { err(e); reload("reels"); }
@@ -741,6 +807,7 @@
       </div>
       <div class="modal-actions">
         ${task ? '<button type="button" class="btn btn-danger" data-act="delete-task">Eliminar</button>' : ""}
+        ${task && S.reels.some(r => r.task_id === task.id) ? `<button type="button" class="btn btn-accent" data-act="open-task-reel" data-id="${task.id}">🎬 Ver guion del reel</button>` : ""}
         ${task && (t.due_date || t.reminder_at) ? '<button type="button" class="btn btn-ghost" data-act="gcal" title="Android, Google Calendar y computador">📅 Google Calendar</button><button type="button" class="btn btn-ghost" data-act="ics" title="iPhone, Mac y Outlook">🍎 Calendario Apple / Outlook</button>' : ""}
         <span class="right"><button type="button" class="btn btn-ghost" data-act="close-modal">Cancelar</button><button class="btn btn-primary">Guardar</button></span>
       </div>
@@ -805,6 +872,7 @@
     try {
       if (old) {
         await store.update("tasks", id, data);
+        if (old.status !== data.status) syncReelFromTask(Object.assign(old, data));
         if (data.assignee_id && data.assignee_id !== old.assignee_id) notify(data.assignee_id, `${member(S.me).name} te asignó «${data.title}»`, id);
         toast("Tarea actualizada");
       } else {
@@ -1033,6 +1101,17 @@
       case "new-note": noteModal(); break;
       case "close-modal": closeModal(); break;
       case "toggle-att": el.classList.toggle("on"); break;
+      case "content-project": S.contentProject = el.dataset.v; S.contentPlan = ""; lsSet("content_project", S.contentProject); renderMain(); break;
+      case "reel-to-board": { const r = byId(S.reels, el.dataset.id); if (!r) break; el.disabled = true; try { await sendReelToBoard(r); rerenderContent(r); } catch (x) { err(x); el.disabled = false; } break; }
+      case "open-reel-task": { const r = byId(S.reels, el.dataset.id), t = r && byId(S.tasks, r.task_id); if (t) taskModal(t); break; }
+      case "open-task-reel": { const r = S.reels.find(x => x.task_id === el.dataset.id); if (r) reelModal(r); break; }
+      case "all-to-board": {
+        const pend = contentScope().reels.filter(r => !(r.task_id && byId(S.tasks, r.task_id)));
+        if (!pend.length || !confirm(`¿Crear ${pend.length} tarjeta(s) en el tablero, una por reel?`)) break;
+        el.disabled = true; let k = 0;
+        for (const r of pend) { try { await sendReelToBoard(r, true); k++; } catch (x) { err(x); } }
+        toast(`📋 ${k} reel(s) enviados al tablero`); await reload("tasks"); renderMain(); break;
+      }
       case "content-tab": S.contentTab = el.dataset.v; lsSet("content_tab", S.contentTab); renderMain(); break;
       case "reel-filter": S.reelFilter = el.dataset.v; renderMain(); break;
       case "reel-stage": { const r = byId(S.reels, el.dataset.id); if (r) setReelStage(r, el.dataset.stage); break; }
@@ -1085,9 +1164,16 @@
   });
   document.addEventListener("change", (e) => {
     if (e.target.matches("[data-upload]")) return handleUpload(e.target);
+    if (e.target.dataset.actChange === "content-plan") { S.contentPlan = e.target.value; renderMain(); return; }
+    if (e.target.dataset.actChange === "plan-project") {
+      const pl = byId(S.content_plans, e.target.dataset.id), v = e.target.value || null;
+      if (pl) { pl.project_id = v; store.update("content_plans", pl.id, { project_id: v }).then(() => { toast("Plan movido a " + (v ? project(v).name : "Sin proyecto")); renderMain(); }).catch(err); }
+      return;
+    }
     if (e.target.dataset.actChange === "reel-assignee") {
       const r = byId(S.reels, e.target.dataset.id), v = e.target.value || null;
-      if (r) { r.assignee_id = v; store.update("reels", r.id, { assignee_id: v }).then(() => { toast("Responsable actualizado"); if (v && v !== S.me) notify(v, `${member(S.me).name} te asignó el reel «${r.title}» 🎬`); renderMain(); }).catch(err); }
+      if (r) { r.assignee_id = v; const lt = r.task_id && byId(S.tasks, r.task_id); if (lt && v) { lt.assignee_id = v; store.update("tasks", lt.id, { assignee_id: v }).catch(console.warn); }
+        store.update("reels", r.id, { assignee_id: v }).then(() => { toast("Responsable actualizado"); if (v && v !== S.me) notify(v, `${member(S.me).name} te asignó el reel «${r.title}» 🎬`); renderMain(); }).catch(err); }
       return;
     }
     const f = e.target.dataset.filter;
