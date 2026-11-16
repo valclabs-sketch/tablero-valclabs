@@ -16,7 +16,8 @@
   const PALETTE = ["#5e35b1", "#dc0c89", "#9575cd", "#2d1b69", "#e07b00", "#1e88e5", "#2e8b62", "#c2185b"];
 
   const S = {
-    members: [], projects: [], tasks: [], notes: [], notifications: [],
+    members: [], projects: [], tasks: [], notes: [], notifications: [], reels: [], content_plans: [],
+    contentTab: lsGet("content_tab") || "reels", reelFilter: "",
     me: null, user: null,
     view: lsGet("view") || "board",
     filters: Object.assign({ member: "", project: "", priority: "", day: "", date: "", q: "" }, lsGetJSON("filters") || {}),
@@ -199,10 +200,10 @@
 
   // ---------------- datos ----------------
   async function loadAll() {
-    const [members, projects, tasks, notes, notifications] = await Promise.all(
-      ["members", "projects", "tasks", "notes", "notifications"].map(t => store.all(t))
+    const [members, projects, tasks, notes, notifications, reels, content_plans] = await Promise.all(
+      ["members", "projects", "tasks", "notes", "notifications", "reels", "content_plans"].map(t => store.all(t).catch(() => []))
     );
-    Object.assign(S, { members, projects, tasks, notes, notifications });
+    Object.assign(S, { members, projects, tasks, notes, notifications, reels, content_plans });
   }
   async function reload(table) {
     if (recoveryMode) return; // no tapar la pantalla de nueva contraseña
@@ -272,7 +273,7 @@
       <header class="topbar"><div class="topbar-inner">
         <a class="brand" href="#" data-act="view" data-v="board"><img src="assets/logo.png" alt="ValClabs" /><span>Tablero del equipo</span></a>
         <nav class="tabs">
-          ${[["board", "Tablero"], ["notes", "Reuniones"], ["team", "Equipo"]].map(([v, l]) =>
+          ${[["board", "Tablero"], ["notes", "Reuniones"], ["content", "Contenido"], ["team", "Equipo"]].map(([v, l]) =>
             `<button class="tab ${S.view === v ? "active" : ""}" data-act="view" data-v="${v}">${l}</button>`).join("")}
         </nav>
         <div class="top-actions">
@@ -294,9 +295,10 @@
   function renderMain() {
     const $f = document.getElementById("filters"), $m = document.getElementById("main");
     if (!$f || !$m) return;
-    $f.innerHTML = S.view === "team" ? "" : filtersHTML();
+    $f.innerHTML = S.view === "team" || S.view === "content" ? "" : filtersHTML();
     if (S.view === "board") renderBoard($m);
     else if (S.view === "notes") renderNotes($m);
+    else if (S.view === "content") renderContent($m);
     else renderTeam($m);
   }
 
@@ -459,6 +461,106 @@
         </article>`;
       }).join("")}</div>` : `<div class="empty-state"><img src="assets/icon-192.png" alt="" /><p>No hay notas con estos filtros.</p><button class="btn btn-primary" data-act="new-note">Crear la primera nota</button></div>`}
     </div>`;
+  }
+
+
+  // ---------------- contenido (plan de reels) ----------------
+  const FORMATS = { microfono: { label: "Micrófono", color: "#5e35b1" }, actuado: { label: "Actuado", color: "#c2410c" }, muestra: { label: "Muestra", color: "#0f8a6a" } };
+  const STAGES = [
+    { id: "recorded", label: "Grabado", icon: "🎬", todo: "Por grabar" },
+    { id: "edited", label: "Editado", icon: "✂️", todo: "Por editar" },
+    { id: "published", label: "Publicado", icon: "📲", todo: "Por publicar" }
+  ];
+  function reelStatus(r) {
+    const next = STAGES.find(st => !r[st.id]);
+    return next ? next.todo : "Publicado";
+  }
+  function dayParts(s) {
+    const [y, m, d] = s.split("-").map(Number), dt = new Date(y, m - 1, d);
+    const wd = dt.toLocaleDateString("es", { weekday: "short" }).replace(".", "");
+    return { wd: wd.charAt(0).toUpperCase() + wd.slice(1), d, mon: dt.toLocaleDateString("es", { month: "short" }).replace(".", ""), dt };
+  }
+  function weekKey(s) { const { dt } = dayParts(s); const k = new Date(dt); k.setDate(dt.getDate() - ((dt.getDay() + 6) % 7)); return dayStr(k); }
+  function formatPill(f) { const x = FORMATS[f] || FORMATS.microfono; return `<span class="fmt-pill" style="color:${x.color};border-color:${x.color}40;background:${x.color}10">${x.label}</span>`; }
+  function stageButtons(r, big) {
+    return `<div class="stages ${big ? "big" : ""}">${STAGES.map(st => `<button type="button" class="stage ${r[st.id] ? "on" : ""}" data-act="reel-stage" data-id="${r.id}" data-stage="${st.id}" aria-pressed="${!!r[st.id]}">
+      <span class="st-ic">${r[st.id] ? "✓" : st.icon}</span><span>${st.label}</span>${r[st.id + "_at"] && big ? `<small>${esc(fmtDay(dayStr(new Date(r[st.id + "_at"]))))}</small>` : ""}</button>`).join("")}</div>`;
+  }
+  function renderContent($m) {
+    const plan = [...S.content_plans].sort((a, b) => (b.start_date || "").localeCompare(a.start_date || ""))[0];
+    if (!plan) { $m.innerHTML = `<div class="page"><div class="empty-state"><img src="assets/icon-192.png" alt="" /><p>Todavía no hay un plan de contenido.</p></div></div>`; return; }
+    const all = S.reels.filter(r => r.plan_id === plan.id).sort((a, b) => (a.publish_date || "").localeCompare(b.publish_date || "") || (a.position - b.position));
+    const n = all.length, cnt = id => all.filter(r => r[id]).length;
+    const f = S.reelFilter;
+    const list = all.filter(r => !f || (f === "done" ? r.published : reelStatus(r) === f));
+    const t0 = today();
+    const weeks = {};
+    list.forEach(r => { const k = weekKey(r.publish_date); (weeks[k] = weeks[k] || []).push(r); });
+    const tabs = `<div class="seg">${[["reels", "🎬 Reels"], ["guia", "📘 Guía de producción"]].map(([v, l]) => `<button class="seg-btn ${S.contentTab === v ? "on" : ""}" data-act="content-tab" data-v="${v}">${l}</button>`).join("")}</div>`;
+    const head = `<div class="page-head content-head"><div><span class="eyebrow">Plan de contenido · ${esc(plan.period)}</span><h1>${esc(plan.title)}</h1></div></div>
+      <div class="progress-row">${STAGES.map(st => { const c = cnt(st.id); return `<div class="prog"><div class="prog-top"><span>${st.icon} ${st.label}s</span><b>${c}/${n}</b></div><div class="prog-bar"><i style="width:${n ? Math.round(c / n * 100) : 0}%"></i></div></div>`; }).join("")}</div>${tabs}`;
+    if (S.contentTab === "guia") {
+      $m.innerHTML = `<div class="page">${head}<article class="guide">${plan.guide_html || "<p>Sin guía.</p>"}</article></div>`;
+      return;
+    }
+    const chips = [["", "Todos", n], ["Por grabar", "Por grabar", all.filter(r => reelStatus(r) === "Por grabar").length], ["Por editar", "Por editar", all.filter(r => reelStatus(r) === "Por editar").length], ["Por publicar", "Por publicar", all.filter(r => reelStatus(r) === "Por publicar").length], ["done", "Publicados", cnt("published")]];
+    $m.innerHTML = `<div class="page">${head}
+      <div class="reel-filters">${chips.map(([v, l, c]) => `<button class="rf ${f === v ? "on" : ""}" data-act="reel-filter" data-v="${v}">${l} <b>${c}</b></button>`).join("")}</div>
+      ${list.length ? Object.keys(weeks).sort().map(k => { const a = dayParts(k), b = dayParts(addDaysFrom(k, 6));
+        return `<h3 class="week-h">Semana del ${a.d} ${a.mon} al ${b.d} ${b.mon}</h3><div class="reel-list">${weeks[k].map(r => {
+          const p = dayParts(r.publish_date), st = reelStatus(r), late = !r.published && r.publish_date < t0, isToday = r.publish_date === t0;
+          return `<article class="reel ${r.published ? "done" : ""} ${late ? "late" : ""}" data-reel="${r.id}">
+            <div class="reel-date ${isToday ? "today" : ""}"><span>${esc(p.wd)}</span><b>${p.d}</b><small>${esc(r.ig_time || "")}</small></div>
+            <div class="reel-main">
+              <div class="reel-tags">${formatPill(r.format)}<span class="chip">${esc(r.duration)}</span>${late ? '<span class="chip prio-alta">Atrasado</span>' : isToday ? '<span class="chip prio-media">Se publica hoy</span>' : ""}<span class="reel-status s-${st === "Publicado" ? "ok" : "todo"}">${st === "Publicado" ? "✓ Publicado" : st}</span></div>
+              <h4>${esc(r.title)}</h4>
+              <p class="reel-theme">${esc(r.theme)}${member(r.assignee_id) ? " · " + esc(member(r.assignee_id).name) : ""}</p>
+              ${stageButtons(r)}
+            </div>
+            <span class="reel-open" aria-hidden="true">›</span>
+          </article>`; }).join("")}</div>`; }).join("") : `<div class="empty-state"><p>No hay reels en este estado.</p></div>`}
+    </div>`;
+  }
+  function addDaysFrom(s, n) { const { dt } = dayParts(s); dt.setDate(dt.getDate() + n); return dayStr(dt); }
+  function reelModal(r) {
+    if (!r) return;
+    const p = dayParts(r.publish_date), e = r.entry || {}, lab = r.script_label || "Voz";
+    openModal(`<div class="reel-modal" data-id="${r.id}">
+      <h2>${esc(r.title)}<button type="button" class="close" data-act="close-modal">×</button></h2>
+      <div class="reel-tags">${formatPill(r.format)}<span class="chip">${esc(r.duration)}</span><span class="chip">${esc(r.theme)}</span></div>
+      <div class="rm-when"><div><small>Publicar</small><b>${esc(p.wd)} ${p.d} ${esc(p.mon)}</b></div><div><small>Instagram</small><b>${esc(r.ig_time)}</b></div><div><small>TikTok</small><b>${esc(r.tt_time)}</b></div>
+        <div class="rm-who"><small>Responsable</small><select class="input" data-act-change="reel-assignee" data-id="${r.id}"><option value="">Sin asignar</option>${S.members.map(m => `<option value="${m.id}" ${m.id === r.assignee_id ? "selected" : ""}>${esc(m.name)}</option>`).join("")}</select></div></div>
+      ${stageButtons(r, true)}
+      ${e.text ? `<div class="rm-entry"><span class="eyebrow">Entrada · primeros 3 segundos</span><div class="rm-hook">"${esc(e.text)}"</div><dl><dt>0 – 1 s</dt><dd>${esc(e.a || "")}</dd><dt>1 – 3 s</dt><dd>${esc(e.b || "")}</dd></dl></div>` : ""}
+      <dl class="rm-kv">${(r.details || []).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl>
+      <h3 class="rm-h">Guion</h3>
+      <div class="script-rows">${(r.script || []).map(x => `<div class="sr"><span class="sr-t">${esc(x.t)}</span><div><small>En pantalla</small><p>${esc(x.screen)}</p></div><div><small>${esc(lab)}</small><p class="say">${esc(x.voice)}</p></div></div>`).join("")}</div>
+      ${r.caption ? `<h3 class="rm-h">Descripción<button type="button" class="link-btn" data-act="copy-caption" data-id="${r.id}">Copiar</button></h3><div class="rm-caption">${esc(r.caption)}</div>` : ""}
+      ${r.note ? `<p class="rm-note">💡 ${esc(r.note)}</p>` : ""}
+    </div>`);
+  }
+  async function setReelStage(r, stage) {
+    const idx = STAGES.findIndex(s => s.id === stage), turnOn = !r[stage], patch = {}, now = new Date().toISOString();
+    STAGES.forEach((s, i) => {
+      if (turnOn && i <= idx && !r[s.id]) { patch[s.id] = true; patch[s.id + "_at"] = now; }
+      if (!turnOn && i >= idx && r[s.id]) { patch[s.id] = false; patch[s.id + "_at"] = null; }
+    });
+    Object.assign(r, patch);
+    rerenderContent(r);
+    try {
+      await store.update("reels", r.id, patch);
+      toast(turnOn ? `${STAGES[idx].icon} «${r.title}»: ${STAGES[idx].label.toLowerCase()}` : "Estado actualizado");
+      if (stage === "published" && turnOn && r.assignee_id && r.assignee_id !== S.me) notify(r.assignee_id, `${member(S.me).name} marcó como publicado «${r.title}» 📲`);
+    } catch (e) { err(e); reload("reels"); }
+  }
+  function rerenderContent(r) {
+    if (S.view === "content") renderMain();
+    const m = document.querySelector(".reel-modal");
+    if (m && r && m.dataset.id === r.id) { const sc = document.querySelector(".modal").scrollTop; reelModal(r); document.querySelector(".modal").scrollTop = sc; }
+  }
+  async function copyText(text, msg) {
+    try { await navigator.clipboard.writeText(text); toast(msg || "Copiado ✓"); }
+    catch (e) { toast("No se pudo copiar automáticamente"); }
   }
 
   function renderTeam($m) {
@@ -893,6 +995,8 @@
   document.addEventListener("click", async (e) => {
     const card = e.target.closest(".card");
     if (card && !e.target.closest("[data-act]")) return taskModal(byId(S.tasks, card.dataset.id));
+    const reelEl = e.target.closest("[data-reel]");
+    if (reelEl && !e.target.closest("[data-act]")) return reelModal(byId(S.reels, reelEl.dataset.reel));
     const noteEl = e.target.closest("[data-note]");
     if (noteEl) return noteModal(byId(S.notes, noteEl.dataset.note));
     const nEl = e.target.closest("[data-notif]");
@@ -929,6 +1033,11 @@
       case "new-note": noteModal(); break;
       case "close-modal": closeModal(); break;
       case "toggle-att": el.classList.toggle("on"); break;
+      case "content-tab": S.contentTab = el.dataset.v; lsSet("content_tab", S.contentTab); renderMain(); break;
+      case "reel-filter": S.reelFilter = el.dataset.v; renderMain(); break;
+      case "reel-stage": { const r = byId(S.reels, el.dataset.id); if (r) setReelStage(r, el.dataset.stage); break; }
+      case "copy-caption": { const r = byId(S.reels, el.dataset.id); if (r) copyText(r.caption, "Descripción copiada ✓"); break; }
+      case "copy-prompt": { const t = document.getElementById("g-prompt-text"); if (t) copyText(t.innerText, "Parámetros copiados ✓"); break; }
       case "move": moveMenu(byId(S.tasks, el.dataset.id)); break;
       case "move-to": closeModal(); await moveTask(byId(S.tasks, el.dataset.id), el.dataset.status); break;
       case "goto-col": {
@@ -976,6 +1085,11 @@
   });
   document.addEventListener("change", (e) => {
     if (e.target.matches("[data-upload]")) return handleUpload(e.target);
+    if (e.target.dataset.actChange === "reel-assignee") {
+      const r = byId(S.reels, e.target.dataset.id), v = e.target.value || null;
+      if (r) { r.assignee_id = v; store.update("reels", r.id, { assignee_id: v }).then(() => { toast("Responsable actualizado"); if (v && v !== S.me) notify(v, `${member(S.me).name} te asignó el reel «${r.title}» 🎬`); renderMain(); }).catch(err); }
+      return;
+    }
     const f = e.target.dataset.filter;
     if (f && f !== "q") setFilter(f, e.target.value);
   });

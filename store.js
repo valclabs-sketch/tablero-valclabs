@@ -1,6 +1,6 @@
 // Capa de datos: "local" (localStorage) o "cloud" (Supabase, compartido por el equipo)
 (function () {
-  const TABLES = ["members", "projects", "tasks", "notes", "notifications"];
+  const TABLES = ["members", "projects", "tasks", "notes", "notifications", "reels", "content_plans"];
   const cfg = window.TABLERO_CONFIG || {};
   const uid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2));
   const nowIso = () => new Date().toISOString();
@@ -13,7 +13,7 @@
     let db;
 
     function seed() {
-      return { members: [], projects: [], tasks: [], notes: [], notifications: [] };
+      return { members: [], projects: [], tasks: [], notes: [], notifications: [], reels: [], content_plans: [] };
     }
     function load() {
       try { db = JSON.parse(localStorage.getItem(KEY)); } catch (e) { db = null; }

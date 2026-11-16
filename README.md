@@ -15,6 +15,7 @@ Funciona en el computador y en el celular (se puede instalar como app).
   - en un recordatorio extra a la hora que elijas.
   Los avisos de entrega salen desde las 8 a. m. (hora de Colombia; se cambia en `TABLERO_TZ` dentro de `.github/workflows/recordatorios.yml`).
 - **Instalar como app**: botón «📲 Instalar app» con las instrucciones para iPhone, Android y computador.
+- **Contenido**: plan de reels con calendario, guiones, guía de producción y estado de cada reel (🎬 grabado → ✂️ editado → 📲 publicado). El contenido vive en Supabase (privado), no en este repositorio.
 - **Archivos adjuntos** en tareas y notas de reuniones (fotos, PDF, documentos; hasta 50 MB cada uno, guardados de forma privada en Supabase Storage).
 - Botones para llevar la tarea a tu calendario: **Google Calendar** (Android y computador) y **Calendario Apple / Outlook** (iPhone, Mac, Outlook).
 

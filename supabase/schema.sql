@@ -123,3 +123,52 @@ begin
   end loop;
 end $$;
 
+
+-- =========================================================
+--  Plan de contenido (reels) — grabado / editado / publicado
+-- =========================================================
+create table if not exists content_plans (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  period text default '',
+  start_date date,
+  end_date date,
+  guide_html text default '',
+  created_at timestamptz default now()
+);
+
+create table if not exists reels (
+  id uuid primary key default gen_random_uuid(),
+  plan_id uuid references content_plans(id) on delete cascade,
+  publish_date date,
+  ig_time text default '',
+  tt_time text default '',
+  title text not null,
+  format text default 'microfono' check (format in ('microfono','actuado','muestra')),
+  duration text default '',
+  theme text default '',
+  details jsonb default '[]'::jsonb,
+  script jsonb default '[]'::jsonb,
+  script_label text default 'Voz',
+  entry jsonb default '{}'::jsonb,
+  caption text default '',
+  note text default '',
+  assignee_id uuid references members(id) on delete set null,
+  recorded boolean default false, recorded_at timestamptz,
+  edited boolean default false,   edited_at timestamptz,
+  published boolean default false, published_at timestamptz,
+  position int default 0,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+alter table content_plans enable row level security;
+alter table reels enable row level security;
+drop policy if exists "equipo_content_plans" on content_plans;
+create policy "equipo_content_plans" on content_plans for all to authenticated using (true) with check (true);
+drop policy if exists "equipo_reels" on reels;
+create policy "equipo_reels" on reels for all to authenticated using (true) with check (true);
+do $$ begin
+  begin alter publication supabase_realtime add table content_plans; exception when duplicate_object then null; end;
+  begin alter publication supabase_realtime add table reels; exception when duplicate_object then null; end;
+end $$;
