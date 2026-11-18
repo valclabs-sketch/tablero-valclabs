@@ -693,6 +693,7 @@
           ${!isStandalone() ? '<button class="acc-item" data-act="install">📲 Instalar app</button>' : ""}
           <button class="acc-item" data-act="test-notif">🔔 Probar notificaciones</button>
           <button class="acc-item" data-act="view" data-v="team">⚙️ Equipo y proyectos</button>
+          <a class="acc-item" href="https://valclabs-sketch.github.io/cocina-del-sabado/" target="_blank" rel="noopener">🥗 Cocina del Sábado</a>
           ${store.mode === "cloud" ? '<button class="acc-item" data-act="change-password">🔑 Cambiar contraseña</button>' : ""}
           ${store.mode === "cloud" ? '<button class="acc-item danger" data-act="logout">↩︎ Cerrar sesión</button>' : ""}
         </div>`;

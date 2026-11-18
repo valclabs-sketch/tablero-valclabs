@@ -1,5 +1,5 @@
 // Service worker: funciona sin conexión (shell) y recibe notificaciones push
-const CACHE = "tablero-vc-v14";
+const CACHE = "tablero-vc-v15";
 const SHELL = ["./", "index.html", "styles.css", "app.js", "store.js", "config.js", "manifest.webmanifest", "assets/logo.png", "assets/icon-192.png", "assets/icon-512.png"];
 
 self.addEventListener("install", (e) => {
