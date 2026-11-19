@@ -16,7 +16,7 @@
   const PALETTE = ["#5e35b1", "#dc0c89", "#9575cd", "#2d1b69", "#e07b00", "#1e88e5", "#2e8b62", "#c2185b"];
 
   const S = {
-    members: [], projects: [], tasks: [], notes: [], notifications: [], reels: [], content_plans: [],
+    members: [], projects: [], tasks: [], notes: [], notifications: [], reels: [], content_plans: [], task_comments: [],
     contentTab: lsGet("content_tab") || "reels", reelFilter: "", contentProject: lsGet("content_project") || "", contentPlan: "",
     me: null, user: null,
     view: lsGet("view") || "board",
@@ -198,17 +198,123 @@
       <div class="modal-actions"><button type="button" class="btn btn-ghost" data-act="test-notif">Probar otra vez</button><span class="right"><button type="button" class="btn btn-primary" data-act="close-modal">Sí me llegó</button></span></div>`);
   }
 
+
+  // ---------------- comentarios de tareas ----------------
+  let commentFiles = [];
+  const reEsc = x => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  function commentTextHTML(text) {
+    let h = esc(text);
+    S.members.map(m => m.name).sort((a, b) => b.length - a.length).forEach(n => {
+      h = h.replace(new RegExp("@" + reEsc(esc(n)), "g"), `<span class="mention">@${esc(n)}</span>`);
+    });
+    return h.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>').replace(/\n/g, "<br>");
+  }
+  function renderComments(taskId, keepDraft) {
+    const box = document.getElementById("comments");
+    if (!box || box.dataset.task !== taskId) return;
+    const ta0 = box.querySelector("textarea"), draft = keepDraft && ta0 ? ta0.value : "", hadFocus = ta0 && document.activeElement === ta0;
+    const list = S.task_comments.filter(c => c.task_id === taskId).sort((a, b) => a.created_at.localeCompare(b.created_at));
+    box.innerHTML = `<h3 class="cm-title">💬 Comentarios ${list.length ? `<span class="chip">${list.length}</span>` : ""}</h3>
+      <div class="cm-list">${list.length ? list.map(c => { const m = member(c.member_id), mine = c.member_id === S.me;
+        return `<div class="cm ${mine ? "mine" : ""}">${avatar(m, "sm")}<div class="cm-bubble">
+          <div class="cm-head"><b>${esc(m ? m.name : "Alguien")}</b><small title="${esc(fmtDateTime(c.created_at))}">${esc(timeAgo(c.created_at))}</small>${mine ? `<button type="button" class="cm-del" data-act="del-comment" data-id="${c.id}">Eliminar</button>` : ""}</div>
+          ${c.text ? `<div class="cm-text">${commentTextHTML(c.text)}</div>` : ""}
+          ${(c.attachments || []).length ? `<div class="cm-files">${c.attachments.map((f, i) => `<button type="button" class="cm-file" data-act="cm-open" data-id="${c.id}" data-i="${i}">${fileIcon(f.type)} ${esc(f.name)} <small>${fmtSize(f.size || 0)}</small></button>`).join("")}</div>` : ""}
+        </div></div>`; }).join("") : `<p class="cm-empty">Aún no hay comentarios. Escribe el primero 👇</p>`}</div>
+      <form class="cm-compose" data-form="comment" data-task="${taskId}">
+        <div class="cm-pending" id="cm-pending"></div>
+        <div class="cm-input-wrap">
+          <textarea class="input" name="text" rows="2" placeholder="Escribe un comentario… usa @ para mencionar a alguien">${esc(draft)}</textarea>
+          <div class="mention-list hidden" id="mention-list"></div>
+        </div>
+        <div class="cm-actions">
+          <label class="btn btn-ghost cm-attach"><input type="file" multiple data-comment-upload hidden />📎 Archivo</label>
+          <button type="button" class="btn btn-ghost" data-act="cm-at">@ Mencionar</button>
+          <button class="btn btn-primary cm-send">Enviar</button>
+        </div>
+      </form>`;
+    renderCommentPending();
+    const l = box.querySelector(".cm-list"); l.scrollTop = l.scrollHeight;
+    if (hadFocus) { const ta = box.querySelector("textarea"); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+  }
+  function renderCommentPending() {
+    const el = document.getElementById("cm-pending");
+    if (!el) return;
+    el.innerHTML = commentFiles.map((f, i) => `<span class="cm-chip ${f.uploading ? "loading" : ""}">${fileIcon(f.type)} ${esc(f.name)} ${f.uploading ? "· subiendo…" : `<button type="button" data-act="cm-unfile" data-i="${i}">×</button>`}</span>`).join("");
+  }
+  async function handleCommentUpload(input) {
+    const files = [...input.files]; input.value = "";
+    for (const file of files) {
+      const temp = { name: file.name, size: file.size, type: file.type, uploading: true };
+      commentFiles.push(temp); renderCommentPending();
+      try { Object.assign(temp, await store.uploadFile(file)); delete temp.uploading; }
+      catch (e) { commentFiles = commentFiles.filter(x => x !== temp); err(e); }
+      renderCommentPending();
+    }
+  }
+  function findMentions(text) {
+    const low = text.toLowerCase(), ids = new Set();
+    S.members.forEach(m => {
+      const full = "@" + m.name.toLowerCase(), first = "@" + m.name.split(" ")[0].toLowerCase();
+      if (low.includes(full) || new RegExp(reEsc(first) + "(?![a-z0-9áéíóúñü])").test(low)) ids.add(m.id);
+    });
+    return [...ids];
+  }
+  async function sendComment(form) {
+    const taskId = form.dataset.task, t = byId(S.tasks, taskId);
+    const text = form.text.value.trim();
+    if (commentFiles.some(f => f.uploading)) return toast("Espera a que terminen de subir los archivos");
+    if (!text && !commentFiles.length) return toast("Escribe un comentario o adjunta un archivo");
+    const mentions = findMentions(text);
+    const row = { task_id: taskId, member_id: S.me, text, attachments: commentFiles.map(({ uploading, ...f }) => f), mentions };
+    form.querySelector(".cm-send").disabled = true;
+    try {
+      const c = await store.insert("task_comments", row);
+      if (c && !S.task_comments.some(x => x.id === c.id)) S.task_comments.push(c);
+      commentFiles = [];
+      const me = member(S.me).name, title = t ? t.title : "una tarea", short = text.length > 80 ? text.slice(0, 80) + "…" : text;
+      const notified = new Set([S.me]);
+      for (const id of mentions) if (!notified.has(id)) { notified.add(id); notify(id, `${me} te mencionó en «${title}»: ${short || "📎 archivo"}`, taskId); }
+      const others = new Set([t && t.assignee_id, t && t.created_by, ...S.task_comments.filter(x => x.task_id === taskId).map(x => x.member_id)]);
+      for (const id of others) if (id && !notified.has(id)) { notified.add(id); notify(id, `${me} comentó en «${title}»: ${short || "📎 archivo"}`, taskId); }
+      if (mentions.filter(x => x !== S.me).length) toast("💬 Comentario enviado y notificado a " + mentions.filter(x => x !== S.me).map(x => member(x).name.split(" ")[0]).join(", "));
+      renderComments(taskId);
+      renderMain();
+    } catch (e) { err(e); form.querySelector(".cm-send").disabled = false; }
+  }
+  function showMentionList(textarea) {
+    const box = document.getElementById("mention-list");
+    if (!box) return;
+    const before = textarea.value.slice(0, textarea.selectionStart), m = before.match(/(^|\s)@([a-zA-Záéíóúñü]*)$/);
+    if (!m) return box.classList.add("hidden");
+    const q = m[2].toLowerCase(), opts = S.members.filter(x => x.name.toLowerCase().includes(q)).slice(0, 6);
+    if (!opts.length) return box.classList.add("hidden");
+    box.innerHTML = opts.map(x => `<button type="button" class="mention-opt" data-act="pick-mention" data-name="${esc(x.name)}">${avatar(x, "sm")} ${esc(x.name)}</button>`).join("");
+    box.classList.remove("hidden");
+  }
+  function insertMention(name) {
+    const ta = document.querySelector(".cm-compose textarea");
+    if (!ta) return;
+    const pos = ta.selectionStart, before = ta.value.slice(0, pos).replace(/@[a-zA-Záéíóúñü]*$/, ""), after = ta.value.slice(pos);
+    ta.value = before + "@" + name + " " + after;
+    const np = (before + "@" + name + " ").length;
+    ta.focus(); ta.setSelectionRange(np, np);
+    document.getElementById("mention-list").classList.add("hidden");
+  }
+
   // ---------------- datos ----------------
   async function loadAll() {
-    const [members, projects, tasks, notes, notifications, reels, content_plans] = await Promise.all(
-      ["members", "projects", "tasks", "notes", "notifications", "reels", "content_plans"].map(t => store.all(t).catch(() => []))
+    const [members, projects, tasks, notes, notifications, reels, content_plans, task_comments] = await Promise.all(
+      ["members", "projects", "tasks", "notes", "notifications", "reels", "content_plans", "task_comments"].map(t => store.all(t).catch(() => []))
     );
-    Object.assign(S, { members, projects, tasks, notes, notifications, reels, content_plans });
+    Object.assign(S, { members, projects, tasks, notes, notifications, reels, content_plans, task_comments });
   }
   async function reload(table) {
     if (recoveryMode) return; // no tapar la pantalla de nueva contraseña
     try {
       if (table) S[table] = await store.all(table); else await loadAll();
+      const cs = document.getElementById("comments");
+      if (cs && (!table || table === "task_comments" || table === "members")) renderComments(cs.dataset.task, true);
       if (!S.me || !member(S.me)) return render();
       checkNewNotifications();
       render();
@@ -360,6 +466,7 @@
       <div class="card-foot">
         ${t.due_date ? `<span class="due ${dueCls}">📅 ${dueCls === "overdue" ? "Venció " : ""}${esc(fmtDay(t.due_date))}</span>` : ""}
         ${(t.attachments || []).length ? `<span class="due" title="Archivos adjuntos">📎 ${t.attachments.length}</span>` : ""}
+        ${(() => { const c = S.task_comments.filter(x => x.task_id === t.id).length; return c ? `<span class="due" title="Comentarios">💬 ${c}</span>` : ""; })()}
         ${t.reminder_at && !t.reminder_sent ? `<span class="bell-mini" title="Recordatorio: ${esc(fmtDateTime(t.reminder_at))}">⏰</span>` : ""}
         <span class="spacer"></span>
         <button type="button" class="move-btn" data-act="move" data-id="${t.id}" title="Mover a otra columna">Mover →</button>
@@ -815,7 +922,10 @@
         ${task && (t.due_date || t.reminder_at) ? '<button type="button" class="btn btn-ghost" data-act="gcal" title="Android, Google Calendar y computador">📅 Google Calendar</button><button type="button" class="btn btn-ghost" data-act="ics" title="iPhone, Mac y Outlook">🍎 Calendario Apple / Outlook</button>' : ""}
         <span class="right"><button type="button" class="btn btn-ghost" data-act="close-modal">Cancelar</button><button class="btn btn-primary">Guardar</button></span>
       </div>
-    </form>`);
+    </form>
+    ${task ? `<section class="comments" id="comments" data-task="${task.id}"></section>` : `<p class="comments-hint">💬 Cuando guardes la tarea podrás comentar, adjuntar archivos y mencionar a tu equipo con @.</p>`}`);
+    commentFiles = [];
+    if (task) renderComments(task.id);
   }
 
   function noteModal(note) {
@@ -1105,6 +1215,24 @@
       case "new-note": noteModal(); break;
       case "close-modal": closeModal(); break;
       case "toggle-att": el.classList.toggle("on"); break;
+      case "cm-at": {
+        const ta = document.querySelector(".cm-compose textarea"); if (!ta) break;
+        const p = ta.selectionStart, v = ta.value, pre = v.slice(0, p) + (p && !/\s$/.test(v.slice(0, p)) ? " @" : "@");
+        ta.value = pre + v.slice(p); ta.focus(); ta.setSelectionRange(pre.length, pre.length); showMentionList(ta); break;
+      }
+      case "pick-mention": insertMention(el.dataset.name); break;
+      case "cm-unfile": commentFiles.splice(+el.dataset.i, 1); renderCommentPending(); break;
+      case "cm-open": { const c = byId(S.task_comments, el.dataset.id); if (c) openAttachment(c.attachments[+el.dataset.i]); break; }
+      case "del-comment": {
+        const c = byId(S.task_comments, el.dataset.id);
+        if (!c || !confirm("¿Eliminar este comentario?")) break;
+        try {
+          await store.remove("task_comments", c.id);
+          for (const f of c.attachments || []) { try { await store.deleteFile(f); } catch (x) {} }
+          S.task_comments = S.task_comments.filter(x => x.id !== c.id); renderComments(c.task_id); renderMain();
+        } catch (x) { err(x); }
+        break;
+      }
       case "content-project": S.contentProject = el.dataset.v; S.contentPlan = ""; lsSet("content_project", S.contentProject); renderMain(); break;
       case "reel-to-board": { const r = byId(S.reels, el.dataset.id); if (!r) break; el.disabled = true; try { await sendReelToBoard(r); rerenderContent(r); } catch (x) { err(x); el.disabled = false; } break; }
       case "open-reel-task": { const r = byId(S.reels, el.dataset.id), t = r && byId(S.tasks, r.task_id); if (t) taskModal(t); break; }
@@ -1163,11 +1291,13 @@
   });
 
   document.addEventListener("input", (e) => {
+    if (e.target.matches(".cm-compose textarea")) showMentionList(e.target);
     const f = e.target.dataset.filter;
     if (f === "q") { S.filters.q = e.target.value; lsSet("filters", JSON.stringify(S.filters)); clearTimeout(window.__qT); window.__qT = setTimeout(() => { const pos = e.target.selectionStart; renderMain(); const i = document.querySelector('[data-filter="q"]'); if (i) { i.focus(); i.setSelectionRange(pos, pos); } }, 200); }
   });
   document.addEventListener("change", (e) => {
     if (e.target.matches("[data-upload]")) return handleUpload(e.target);
+    if (e.target.matches("[data-comment-upload]")) return handleCommentUpload(e.target);
     if (e.target.dataset.actChange === "content-project") { S.contentProject = e.target.value; S.contentPlan = ""; lsSet("content_project", S.contentProject); renderMain(); return; }
     if (e.target.dataset.actChange === "content-plan") { S.contentPlan = e.target.value; renderMain(); return; }
     if (e.target.dataset.actChange === "plan-project") {
@@ -1193,6 +1323,7 @@
     const fd = new FormData(form);
     try {
       if (kind === "task") return saveTask(form);
+      if (kind === "comment") return sendComment(form);
       if (kind === "note") { if (await saveNote(form)) closeModal(); return; }
       if (kind === "add-member") { await store.insert("members", { name: fd.get("name").trim(), email: fd.get("email").trim() || null, color: fd.get("color") }); toast("Persona agregada"); return reload("members"); }
       if (kind === "add-project") { await store.insert("projects", { name: fd.get("name").trim(), color: fd.get("color") }); toast("Proyecto agregado"); return reload("projects"); }

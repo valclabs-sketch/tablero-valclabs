@@ -176,3 +176,21 @@ end $$;
 -- Contenido por proyecto y enlace reel → tarea del tablero
 alter table content_plans add column if not exists project_id uuid references projects(id) on delete set null;
 alter table reels add column if not exists task_id uuid references tasks(id) on delete set null;
+
+-- Comentarios de las tareas (conversación con archivos y menciones)
+create table if not exists task_comments (
+  id uuid primary key default gen_random_uuid(),
+  task_id uuid references tasks(id) on delete cascade,
+  member_id uuid references members(id) on delete set null,
+  text text default '',
+  attachments jsonb default '[]'::jsonb,
+  mentions uuid[] default '{}',
+  created_at timestamptz default now()
+);
+create index if not exists task_comments_task_idx on task_comments(task_id, created_at);
+alter table task_comments enable row level security;
+drop policy if exists "equipo_task_comments" on task_comments;
+create policy "equipo_task_comments" on task_comments for all to authenticated using (true) with check (true);
+do $$ begin
+  begin alter publication supabase_realtime add table task_comments; exception when duplicate_object then null; end;
+end $$;
