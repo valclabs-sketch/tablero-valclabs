@@ -209,6 +209,22 @@
     });
     return h.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>').replace(/\n/g, "<br>");
   }
+  function commentImgBtn(c, f, i, inline) {
+    return `<button type="button" class="cm-img ${inline ? "inline" : ""}" data-act="cm-view" data-id="${c.id}" data-i="${i}" title="${esc(f.name)}"><img data-cid="${c.id}" data-i="${i}" alt="${esc(f.name)}" />${inline && f.token ? `<span class="cm-img-tag">${esc(f.token.replace(/[\[\]]/g, ""))}</span>` : ""}</button>`;
+  }
+  function commentBodyHTML(c) {
+    const atts = c.attachments || [], used = new Set();
+    let html = c.text ? commentTextHTML(c.text) : "";
+    atts.forEach((f, i) => {
+      if (!f.token || !(f.type || "").startsWith("image/")) return;
+      const tk = esc(f.token);
+      if (html.includes(tk)) { used.add(i); html = html.replace(tk, commentImgBtn(c, f, i, true)); }
+    });
+    html = html.replace(/(<br>)*(<button type="button" class="cm-img inline"[\s\S]*?<\/button>)(<br>)*/g, "$2");
+    const rest = atts.map((f, i) => used.has(i) ? "" : (f.type || "").startsWith("image/") ? commentImgBtn(c, f, i, false)
+      : `<button type="button" class="cm-file" data-act="cm-open" data-id="${c.id}" data-i="${i}">${fileIcon(f.type)} ${esc(f.name)} <small>${fmtSize(f.size || 0)}</small></button>`).join("");
+    return (html ? `<div class="cm-text">${html}</div>` : "") + (rest ? `<div class="cm-files">${rest}</div>` : "");
+  }
   function renderComments(taskId, keepDraft) {
     const box = document.getElementById("comments");
     if (!box || box.dataset.task !== taskId) return;
@@ -218,18 +234,15 @@
       <div class="cm-list">${list.length ? list.map(c => { const m = member(c.member_id), mine = c.member_id === S.me;
         return `<div class="cm ${mine ? "mine" : ""}">${avatar(m, "sm")}<div class="cm-bubble">
           <div class="cm-head"><b>${esc(m ? m.name : "Alguien")}</b><small title="${esc(fmtDateTime(c.created_at))}">${esc(timeAgo(c.created_at))}</small>${mine ? `<button type="button" class="cm-del" data-act="del-comment" data-id="${c.id}">Eliminar</button>` : ""}</div>
-          ${c.text ? `<div class="cm-text">${commentTextHTML(c.text)}</div>` : ""}
-          ${(c.attachments || []).length ? `<div class="cm-files">${c.attachments.map((f, i) => (f.type || "").startsWith("image/")
-            ? `<button type="button" class="cm-img" data-act="cm-view" data-id="${c.id}" data-i="${i}" title="${esc(f.name)}"><img data-cid="${c.id}" data-i="${i}" alt="${esc(f.name)}" /></button>`
-            : `<button type="button" class="cm-file" data-act="cm-open" data-id="${c.id}" data-i="${i}">${fileIcon(f.type)} ${esc(f.name)} <small>${fmtSize(f.size || 0)}</small></button>`).join("")}</div>` : ""}
+          ${commentBodyHTML(c)}
         </div></div>`; }).join("") : `<p class="cm-empty">Aún no hay comentarios. Escribe el primero 👇</p>`}</div>
       <form class="cm-compose" data-form="comment" data-task="${taskId}">
         <div class="cm-drop-hint">Suelta aquí para adjuntar</div>
-        <div class="cm-pending" id="cm-pending"></div>
         <div class="cm-input-wrap">
-          <textarea class="input" name="text" rows="2" placeholder="Escribe un comentario… usa @ para mencionar. Puedes pegar imágenes aquí.">${esc(draft)}</textarea>
+          <textarea class="input" name="text" rows="2" placeholder="Escribe un comentario… usa @ para mencionar. Pega una imagen donde quieras que aparezca.">${esc(draft)}</textarea>
           <div class="mention-list hidden" id="mention-list"></div>
         </div>
+        <div class="cm-pending" id="cm-pending"></div>
         <div class="cm-actions">
           <label class="btn btn-ghost cm-attach"><input type="file" multiple data-comment-upload hidden />📎 Archivo</label>
           <button type="button" class="btn btn-ghost" data-act="cm-at">@ Mencionar</button>
@@ -244,7 +257,9 @@
   function renderCommentPending() {
     const el = document.getElementById("cm-pending");
     if (!el) return;
-    el.innerHTML = commentFiles.map((f, i) => `<span class="cm-chip ${f.uploading ? "loading" : ""}">${f.preview ? `<img src="${f.preview}" alt="" />` : fileIcon(f.type)} ${esc(f.name)} ${f.uploading ? "· subiendo…" : `<button type="button" data-act="cm-unfile" data-i="${i}">×</button>`}</span>`).join("");
+    el.innerHTML = commentFiles.map((f, i) => f.preview
+      ? `<div class="cm-thumb ${f.uploading ? "loading" : ""}"><img src="${f.preview}" alt="" /><span class="cm-thumb-tag">${esc((f.token || f.name).replace(/[\[\]]/g, ""))}${f.uploading ? " · subiendo…" : ""}</span>${f.uploading ? "" : `<button type="button" data-act="cm-unfile" data-i="${i}" title="Quitar">×</button>`}</div>`
+      : `<span class="cm-chip ${f.uploading ? "loading" : ""}">${fileIcon(f.type)} ${esc(f.name)} ${f.uploading ? "· subiendo…" : `<button type="button" data-act="cm-unfile" data-i="${i}">×</button>`}</span>`).join("");
   }
   const imgUrlCache = new Map();
   async function hydrateCommentImages(box) {
@@ -275,12 +290,30 @@
   async function handleCommentUpload(input) {
     const files = addCommentFiles(input.files || input); if (input.value !== undefined) input.value = "";
     for (const file of files) {
-      const temp = { name: file.name, size: file.size, type: file.type, uploading: true, preview: (file.type || "").startsWith("image/") ? URL.createObjectURL(file) : "" };
+      const isImg = (file.type || "").startsWith("image/");
+      const temp = { name: file.name, size: file.size, type: file.type, uploading: true, preview: isImg ? URL.createObjectURL(file) : "" };
+      if (isImg) {
+        const n = Math.max(0, ...commentFiles.map(x => +((x.token || "").match(/\d+/) || [0])[0])) + 1;
+        temp.token = `[imagen ${n}]`;
+        insertAtCursor(temp.token);
+      }
       commentFiles.push(temp); renderCommentPending();
       try { Object.assign(temp, await store.uploadFile(file)); delete temp.uploading; if (temp.preview) imgUrlCache.set(temp.path || temp.name, temp.preview); }
       catch (e) { commentFiles = commentFiles.filter(x => x !== temp); err(e); }
       renderCommentPending();
     }
+  }
+  // Pone «[imagen N]» justo donde está el cursor, en su propia línea, para seguir escribiendo debajo
+  function insertAtCursor(token) {
+    const ta = document.querySelector(".cm-compose textarea");
+    if (!ta) return;
+    const st = ta.selectionStart ?? ta.value.length, en = ta.selectionEnd ?? st;
+    const before = ta.value.slice(0, st), after = ta.value.slice(en);
+    const ins = (before && !before.endsWith("\n") ? "\n" : "") + token + "\n";
+    ta.value = before + ins + after.replace(/^\n/, "");
+    const p = (before + ins).length;
+    ta.focus(); ta.setSelectionRange(p, p);
+    ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight + 2, 260) + "px";
   }
   // Pegar imágenes con Ctrl/Cmd+V y arrastrar archivos al chat
   document.addEventListener("paste", e => {
@@ -1269,7 +1302,12 @@
         ta.value = pre + v.slice(p); ta.focus(); ta.setSelectionRange(pre.length, pre.length); showMentionList(ta); break;
       }
       case "pick-mention": insertMention(el.dataset.name); break;
-      case "cm-unfile": commentFiles.splice(+el.dataset.i, 1); renderCommentPending(); break;
+      case "cm-unfile": {
+        const [f] = commentFiles.splice(+el.dataset.i, 1);
+        const ta = document.querySelector(".cm-compose textarea");
+        if (f && f.token && ta) ta.value = ta.value.replace(f.token + "\n", "").replace(f.token, "");
+        renderCommentPending(); break;
+      }
       case "cm-view": { const c = byId(S.task_comments, el.dataset.id); if (c) viewImage(c.attachments[+el.dataset.i]); break; }
       case "cm-open": { const c = byId(S.task_comments, el.dataset.id); if (c) openAttachment(c.attachments[+el.dataset.i]); break; }
       case "del-comment": {

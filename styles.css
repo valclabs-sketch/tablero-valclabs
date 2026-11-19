@@ -505,3 +505,14 @@ a.acc-item { text-decoration: none; }
 .iv-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: center; color: #fff; font-size: 13px; }
 .iv-bar span { max-width: 60vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 760px) { .cm-img { width: 120px; height: 96px; } }
+
+/* imágenes en su lugar dentro del mensaje */
+.cm-text .cm-img.inline { display: block; width: auto; max-width: min(100%, 320px); height: auto; max-height: 260px; margin: 6px 0; position: relative; }
+.cm-text .cm-img.inline img { width: 100%; height: auto; max-height: 260px; object-fit: contain; }
+.cm-img-tag { position: absolute; left: 6px; top: 6px; background: rgba(45,27,105,.75); color: #fff; font-size: 11px; font-weight: 700; border-radius: 6px; padding: 1px 6px; }
+.cm-compose .cm-pending { display: flex; flex-wrap: wrap; gap: 8px; }
+.cm-thumb { position: relative; width: 120px; border: 1.5px solid var(--lav); border-radius: 12px; overflow: hidden; background: var(--lav-bg); }
+.cm-thumb img { width: 100%; height: 86px; object-fit: cover; display: block; }
+.cm-thumb.loading { opacity: .6; }
+.cm-thumb-tag { display: block; font-size: 11.5px; font-weight: 700; color: var(--violet); padding: 4px 8px; }
+.cm-thumb button { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 50%; border: 0; background: rgba(255,255,255,.95); color: var(--violet); font-weight: 700; }
