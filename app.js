@@ -219,12 +219,15 @@
         return `<div class="cm ${mine ? "mine" : ""}">${avatar(m, "sm")}<div class="cm-bubble">
           <div class="cm-head"><b>${esc(m ? m.name : "Alguien")}</b><small title="${esc(fmtDateTime(c.created_at))}">${esc(timeAgo(c.created_at))}</small>${mine ? `<button type="button" class="cm-del" data-act="del-comment" data-id="${c.id}">Eliminar</button>` : ""}</div>
           ${c.text ? `<div class="cm-text">${commentTextHTML(c.text)}</div>` : ""}
-          ${(c.attachments || []).length ? `<div class="cm-files">${c.attachments.map((f, i) => `<button type="button" class="cm-file" data-act="cm-open" data-id="${c.id}" data-i="${i}">${fileIcon(f.type)} ${esc(f.name)} <small>${fmtSize(f.size || 0)}</small></button>`).join("")}</div>` : ""}
+          ${(c.attachments || []).length ? `<div class="cm-files">${c.attachments.map((f, i) => (f.type || "").startsWith("image/")
+            ? `<button type="button" class="cm-img" data-act="cm-view" data-id="${c.id}" data-i="${i}" title="${esc(f.name)}"><img data-cid="${c.id}" data-i="${i}" alt="${esc(f.name)}" /></button>`
+            : `<button type="button" class="cm-file" data-act="cm-open" data-id="${c.id}" data-i="${i}">${fileIcon(f.type)} ${esc(f.name)} <small>${fmtSize(f.size || 0)}</small></button>`).join("")}</div>` : ""}
         </div></div>`; }).join("") : `<p class="cm-empty">Aún no hay comentarios. Escribe el primero 👇</p>`}</div>
       <form class="cm-compose" data-form="comment" data-task="${taskId}">
+        <div class="cm-drop-hint">Suelta aquí para adjuntar</div>
         <div class="cm-pending" id="cm-pending"></div>
         <div class="cm-input-wrap">
-          <textarea class="input" name="text" rows="2" placeholder="Escribe un comentario… usa @ para mencionar a alguien">${esc(draft)}</textarea>
+          <textarea class="input" name="text" rows="2" placeholder="Escribe un comentario… usa @ para mencionar. Puedes pegar imágenes aquí.">${esc(draft)}</textarea>
           <div class="mention-list hidden" id="mention-list"></div>
         </div>
         <div class="cm-actions">
@@ -235,23 +238,68 @@
       </form>`;
     renderCommentPending();
     const l = box.querySelector(".cm-list"); l.scrollTop = l.scrollHeight;
+    hydrateCommentImages(box);
     if (hadFocus) { const ta = box.querySelector("textarea"); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
   }
   function renderCommentPending() {
     const el = document.getElementById("cm-pending");
     if (!el) return;
-    el.innerHTML = commentFiles.map((f, i) => `<span class="cm-chip ${f.uploading ? "loading" : ""}">${fileIcon(f.type)} ${esc(f.name)} ${f.uploading ? "· subiendo…" : `<button type="button" data-act="cm-unfile" data-i="${i}">×</button>`}</span>`).join("");
+    el.innerHTML = commentFiles.map((f, i) => `<span class="cm-chip ${f.uploading ? "loading" : ""}">${f.preview ? `<img src="${f.preview}" alt="" />` : fileIcon(f.type)} ${esc(f.name)} ${f.uploading ? "· subiendo…" : `<button type="button" data-act="cm-unfile" data-i="${i}">×</button>`}</span>`).join("");
+  }
+  const imgUrlCache = new Map();
+  async function hydrateCommentImages(box) {
+    for (const img of box.querySelectorAll("img[data-cid]")) {
+      const c = byId(S.task_comments, img.dataset.cid), f = c && c.attachments[+img.dataset.i];
+      if (!f) continue;
+      const key = f.path || f.name;
+      try {
+        if (!imgUrlCache.has(key)) imgUrlCache.set(key, await store.fileUrl(f));
+        img.src = imgUrlCache.get(key);
+      } catch (e) { img.closest(".cm-img").classList.add("broken"); }
+    }
+  }
+  function viewImage(f) {
+    const url = imgUrlCache.get(f.path || f.name);
+    if (!url) return openAttachment(f);
+    const ov = document.createElement("div");
+    ov.className = "img-viewer";
+    ov.innerHTML = `<img src="${url}" alt="${esc(f.name)}" /><div class="iv-bar"><span>${esc(f.name)}</span><button type="button" class="btn btn-ghost" data-iv="open">Abrir / descargar</button><button type="button" class="btn btn-primary" data-iv="close">Cerrar</button></div>`;
+    ov.addEventListener("click", ev => { const a = ev.target.dataset.iv; if (a === "open") openAttachment(f); if (a || ev.target === ov) ov.remove(); });
+    document.body.appendChild(ov);
+  }
+  function addCommentFiles(fileList) {
+    const stamp = new Date().toISOString().slice(0, 16).replace("T", " ").replace(":", "h");
+    return [...fileList].map((f, i) => (/^image\.(png|jpe?g|gif|webp)$/i.test(f.name) || !f.name)
+      ? new File([f], `imagen ${stamp}${i ? " " + (i + 1) : ""}.${(f.type.split("/")[1] || "png").replace("jpeg", "jpg")}`, { type: f.type }) : f);
   }
   async function handleCommentUpload(input) {
-    const files = [...input.files]; input.value = "";
+    const files = addCommentFiles(input.files || input); if (input.value !== undefined) input.value = "";
     for (const file of files) {
-      const temp = { name: file.name, size: file.size, type: file.type, uploading: true };
+      const temp = { name: file.name, size: file.size, type: file.type, uploading: true, preview: (file.type || "").startsWith("image/") ? URL.createObjectURL(file) : "" };
       commentFiles.push(temp); renderCommentPending();
-      try { Object.assign(temp, await store.uploadFile(file)); delete temp.uploading; }
+      try { Object.assign(temp, await store.uploadFile(file)); delete temp.uploading; if (temp.preview) imgUrlCache.set(temp.path || temp.name, temp.preview); }
       catch (e) { commentFiles = commentFiles.filter(x => x !== temp); err(e); }
       renderCommentPending();
     }
   }
+  // Pegar imágenes con Ctrl/Cmd+V y arrastrar archivos al chat
+  document.addEventListener("paste", e => {
+    const ta = e.target.closest && e.target.closest(".cm-compose");
+    if (!ta) return;
+    const files = [...(e.clipboardData && e.clipboardData.files || [])];
+    if (!files.length) return;
+    e.preventDefault();
+    handleCommentUpload(files);
+    toast(files.length > 1 ? `📎 ${files.length} archivos pegados` : "🖼️ Imagen pegada");
+  });
+  document.addEventListener("dragover", e => { const c = e.target.closest && e.target.closest(".comments"); if (c) { e.preventDefault(); c.classList.add("dragging"); } });
+  document.addEventListener("dragleave", e => { const c = e.target.closest && e.target.closest(".comments"); if (c && !c.contains(e.relatedTarget)) c.classList.remove("dragging"); });
+  document.addEventListener("drop", e => {
+    const c = e.target.closest && e.target.closest(".comments");
+    if (!c) return;
+    e.preventDefault(); c.classList.remove("dragging");
+    if (e.dataTransfer && e.dataTransfer.files.length) handleCommentUpload([...e.dataTransfer.files]);
+  });
   function findMentions(text) {
     const low = text.toLowerCase(), ids = new Set();
     S.members.forEach(m => {
@@ -266,7 +314,7 @@
     if (commentFiles.some(f => f.uploading)) return toast("Espera a que terminen de subir los archivos");
     if (!text && !commentFiles.length) return toast("Escribe un comentario o adjunta un archivo");
     const mentions = findMentions(text);
-    const row = { task_id: taskId, member_id: S.me, text, attachments: commentFiles.map(({ uploading, ...f }) => f), mentions };
+    const row = { task_id: taskId, member_id: S.me, text, attachments: commentFiles.map(({ uploading, preview, ...f }) => f), mentions };
     form.querySelector(".cm-send").disabled = true;
     try {
       const c = await store.insert("task_comments", row);
@@ -1222,6 +1270,7 @@
       }
       case "pick-mention": insertMention(el.dataset.name); break;
       case "cm-unfile": commentFiles.splice(+el.dataset.i, 1); renderCommentPending(); break;
+      case "cm-view": { const c = byId(S.task_comments, el.dataset.id); if (c) viewImage(c.attachments[+el.dataset.i]); break; }
       case "cm-open": { const c = byId(S.task_comments, el.dataset.id); if (c) openAttachment(c.attachments[+el.dataset.i]); break; }
       case "del-comment": {
         const c = byId(S.task_comments, el.dataset.id);
